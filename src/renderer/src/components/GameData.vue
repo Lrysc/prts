@@ -14,7 +14,7 @@ const isRefreshing = ref(false);
 const lastUpdateTime = ref<number>(0);
 const isAttending = ref(false);
 const attendanceMsg = ref('');
-const showDebug = ref(false); // 调试模式已关闭
+const showDebug = ref(true); // 调试模式已关闭
 
 // 缓存相关
 const CACHE_DURATION = 5 * 60 * 1000; // 5分钟缓存
@@ -157,7 +157,7 @@ const getTrainingStatus = computed(() => {
 const getTowerStatus = computed(() => {
   const towerData = playerData.value?.tower?.reward;
   if (!towerData) return '未开启';
-  
+
   const current = towerData.current || 0;
   const total = towerData.total || 0;
   return `${current}/${total} 数据增补仪`;
@@ -204,7 +204,7 @@ const fetchGameData = async (refresh = false) => {
 
   try {
     console.log('开始加载游戏数据...');
-    
+
     // 1. 检查登录状态，未登录则抛出错误
     if (!authStore.isLogin) {
       console.log('用户未登录');
@@ -223,7 +223,7 @@ const fetchGameData = async (refresh = false) => {
 
     // 3. 获取默认角色
     const targetRole = authStore.bindingRoles.find((role: any) => role.isDefault) || authStore.bindingRoles[0];
-    
+
     if (!targetRole) {
       console.log('未找到绑定的游戏角色');
       throw new Error('未找到绑定的游戏角色');
@@ -241,18 +241,18 @@ const fetchGameData = async (refresh = false) => {
     console.log('玩家数据获取成功');
     playerData.value = data;
     lastUpdateTime.value = Date.now();
-    
+
     // 更新缓存
     dataCache.value = {
       data: data,
       timestamp: Date.now()
     };
-    
+
     console.log('游戏数据加载完成并已缓存');
   } catch (error: any) {
     console.error('GameData load error:', error);
     errorMsg.value = error.message || '游戏数据加载失败，请稍后重试';
-    
+
     // 确保在出错时也停止加载状态
     if (!refresh) {
       isLoading.value = false;
@@ -290,13 +290,13 @@ const handleAttendance = async () => {
     console.log('=== 验证cred有效性 ===');
     const isCredValid = await AuthAPI.checkCred(authStore.sklandCred);
     console.log('Cred有效性:', isCredValid);
-    
+
     if (!isCredValid) {
       throw new Error('Cred已失效，请重新登录');
     }
 
     const targetRole = authStore.bindingRoles.find((role: any) => role.isDefault) || authStore.bindingRoles[0];
-    
+
     if (!targetRole) {
       throw new Error('未找到绑定的游戏角色');
     }
@@ -335,7 +335,7 @@ const handleAttendance = async () => {
 
       attendanceMsg.value = `签到成功！获得：${awardTexts}`;
     }
-    
+
     // 3秒后清除签到消息
     setTimeout(() => {
       attendanceMsg.value = '';
@@ -354,7 +354,7 @@ const handleAttendance = async () => {
 // 组件挂载时加载数据
 onMounted(async () => {
   console.log('GameData组件挂载，开始初始化...');
-  
+
   try {
     // 监听登录状态变化，登录后自动加载数据
     if (authStore.isLogin) {
@@ -404,7 +404,7 @@ watch(() => authStore.isLogin, async (newLoginState, oldLoginState) => {
       <p class="error-text">{{ errorMsg }}</p>
       <button class="retry-btn" @click="fetchGameData">重新加载</button>
     </div>
-    
+
     <!-- 调试信息 -->
     <div class="debug-container" v-if="showDebug">
       <h3>调试信息</h3>
@@ -433,18 +433,18 @@ watch(() => authStore.isLogin, async (newLoginState, oldLoginState) => {
           </div>
         </div>
         <div class="header-buttons">
-          <button 
-            class="attendance-btn" 
-            @click="handleAttendance" 
+          <button
+            class="attendance-btn"
+            @click="handleAttendance"
             :disabled="isAttending"
             :class="{ attending: isAttending }"
           >
             <span v-if="isAttending">签到中...</span>
             <span v-else>每日签到</span>
           </button>
-          <button 
-            class="refresh-btn" 
-            @click="refreshData" 
+          <button
+            class="refresh-btn"
+            @click="refreshData"
             :disabled="isRefreshing"
             :class="{ refreshing: isRefreshing }"
           >
@@ -881,19 +881,19 @@ watch(() => authStore.isLogin, async (newLoginState, oldLoginState) => {
   .GameCard {
     grid-template-columns: repeat(2, 1fr);
   }
-  
+
   .data-header {
     flex-direction: column;
     gap: 12px;
     align-items: stretch;
   }
-  
+
   .left-section {
     flex-direction: column;
     align-items: flex-start;
     gap: 8px;
   }
-  
+
   .header-buttons {
     flex-direction: column;
     gap: 8px;
@@ -909,7 +909,7 @@ watch(() => authStore.isLogin, async (newLoginState, oldLoginState) => {
   .game-data-container {
     padding: 10px;
   }
-  
+
 
 }
 
