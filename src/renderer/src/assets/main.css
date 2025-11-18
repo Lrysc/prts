@@ -3,10 +3,9 @@
 /* 定义方正准雅宋GBK字体 */
 @font-face {
   font-family: 'FZYaSongGBK';
-  src: url('./fonts/FZYaSongGBK.ttf') format('truetype');
+  src: url('./fonts/FZYaSongGBK.ttf') format('woff2');
   font-weight: normal;
   font-style: normal;
-  font-display: swap; /* 优化字体加载性能 */
 }
 
 /* 重置默认样式 */

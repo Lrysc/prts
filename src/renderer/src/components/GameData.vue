@@ -14,7 +14,7 @@ const isRefreshing = ref(false);
 const lastUpdateTime = ref<number>(0);
 const isAttending = ref(false);
 const attendanceMsg = ref('');
-const showDebug = ref(true); // 调试模式已关闭
+const showDebug = ref(false); // 调试模式已开启，方便查看数据更新
 
 // 缓存相关
 const CACHE_DURATION = 5 * 60 * 1000; // 5分钟缓存
@@ -183,18 +183,25 @@ const getRelicCount = computed(() => {
  * 加载游戏数据核心方法
  */
 const fetchGameData = async (refresh = false) => {
-  // 检查缓存（非强制刷新时）
-  if (!refresh && dataCache.value && dataCache.value.data) {
-    const cacheAge = Date.now() - dataCache.value.timestamp;
-    if (cacheAge < CACHE_DURATION) {
-      console.log('使用缓存数据，缓存年龄:', Math.floor(cacheAge / 1000), '秒');
-      playerData.value = dataCache.value.data;
-      lastUpdateTime.value = dataCache.value.timestamp;
-      isLoading.value = false;
-      return;
+  // 强制刷新时清除缓存
+  if (refresh) {
+    console.log('强制刷新，清除缓存');
+    dataCache.value = null;
+  } else {
+    // 检查缓存（非强制刷新时）
+    if (dataCache.value && dataCache.value.data) {
+      const cacheAge = Date.now() - dataCache.value.timestamp;
+      if (cacheAge < CACHE_DURATION) {
+        console.log('使用缓存数据，缓存年龄:', Math.floor(cacheAge / 1000), '秒');
+        playerData.value = dataCache.value.data;
+        lastUpdateTime.value = dataCache.value.timestamp;
+        isLoading.value = false;
+        return;
+      }
     }
   }
 
+  // 设置加载状态
   if (refresh) {
     isRefreshing.value = true;
   } else {
@@ -213,9 +220,9 @@ const fetchGameData = async (refresh = false) => {
 
     console.log('用户已登录，检查绑定角色...');
 
-    // 2. 检查绑定角色，无角色则获取角色列表
-    if (!authStore.bindingRoles || authStore.bindingRoles.length === 0) {
-      console.log('没有绑定角色，正在获取...');
+    // 2. 强制刷新时，重新获取绑定角色列表
+    if (refresh || !authStore.bindingRoles || authStore.bindingRoles.length === 0) {
+      console.log(refresh ? '强制刷新，重新获取绑定角色' : '没有绑定角色，正在获取...');
       await authStore.fetchBindingRoles();
     }
 
@@ -235,12 +242,24 @@ const fetchGameData = async (refresh = false) => {
     const data = await AuthAPI.getPlayerData(
       authStore.sklandCred,
       authStore.sklandSignToken,
-      targetRole.uid
+      targetRole.uid,
+      refresh // 传递刷新参数
     );
 
     console.log('玩家数据获取成功');
+    console.log('新数据详情:', {
+      理智: data.status?.ap?.current,
+      等级: data.status?.level,
+      干员数: data.chars?.length,
+      最后更新: new Date().toLocaleTimeString()
+    });
+
+    // 更新组件数据
     playerData.value = data;
     lastUpdateTime.value = Date.now();
+
+    // 更新store中的数据（保持同步）
+    authStore.playerData = data;
 
     // 更新缓存
     dataCache.value = {
@@ -253,11 +272,13 @@ const fetchGameData = async (refresh = false) => {
     console.error('GameData load error:', error);
     errorMsg.value = error.message || '游戏数据加载失败，请稍后重试';
 
-    // 确保在出错时也停止加载状态
-    if (!refresh) {
-      isLoading.value = false;
+    // 如果刷新失败，恢复缓存数据（如果存在）
+    if (refresh && dataCache.value && dataCache.value.data) {
+      console.log('刷新失败，恢复缓存数据');
+      playerData.value = dataCache.value.data;
     }
   } finally {
+    // 确保加载状态被重置
     isLoading.value = false;
     isRefreshing.value = false;
     console.log('加载状态已重置');
@@ -267,7 +288,8 @@ const fetchGameData = async (refresh = false) => {
 /**
  * 刷新数据
  */
-const refreshData = async () => {
+const refreshData = async (event?: PointerEvent) => {
+  event?.preventDefault();
   await fetchGameData(true);
 };
 
@@ -276,7 +298,8 @@ const refreshData = async () => {
 /**
  * 签到功能
  */
-const handleAttendance = async () => {
+const handleAttendance = async (event?: PointerEvent) => {
+  event?.preventDefault();
   if (!authStore.isLogin || !authStore.bindingRoles.length) {
     errorMsg.value = '请先登录并绑定游戏角色';
     return;
@@ -408,13 +431,55 @@ watch(() => authStore.isLogin, async (newLoginState, oldLoginState) => {
     <!-- 调试信息 -->
     <div class="debug-container" v-if="showDebug">
       <h3>调试信息</h3>
-      <p>isLogin: {{ authStore.isLogin }}</p>
-      <p>isLoading: {{ isLoading }}</p>
-      <p>errorMsg: {{ errorMsg }}</p>
-      <p>bindingRoles length: {{ authStore.bindingRoles.length }}</p>
-      <p>sklandCred: {{ authStore.sklandCred ? '已设置' : '未设置' }}</p>
-      <p>sklandSignToken: {{ authStore.sklandSignToken ? '已设置' : '未设置' }}</p>
-      <p>playerData: {{ playerData ? '已加载' : '未加载' }}</p>
+      <p><strong>登录状态:</strong> {{ authStore.isLogin ? '已登录' : '未登录' }}</p>
+      <p><strong>加载状态:</strong> {{ isLoading ? '加载中' : '空闲' }} | {{ isRefreshing ? '刷新中' : '未刷新' }}</p>
+      <p><strong>错误信息:</strong> {{ errorMsg || '无' }}</p>
+      <p><strong>绑定角色数:</strong> {{ authStore.bindingRoles.length }}</p>
+      <p><strong>认证状态:</strong> Cred={{ authStore.sklandCred ? '✓' : '✗' }} Token={{ authStore.sklandSignToken ? '✓' : '✗' }}</p>
+      <p><strong>数据状态:</strong> {{ playerData ? '✓ 已加载' : '✗ 未加载' }}</p>
+      <p><strong>最后更新:</strong> {{ lastUpdateTime ? new Date(lastUpdateTime).toLocaleTimeString() : '从未' }}</p>
+      <p><strong>缓存状态:</strong> {{ dataCache ? '✓ 已缓存' : '✗ 无缓存' }}</p>
+      <p><strong>缓存年龄:</strong> {{ dataCache ? Math.floor((Date.now() - dataCache.timestamp) / 1000) + '秒' : 'N/A' }}</p>
+
+      <div v-if="playerData" style="margin-top: 10px; padding: 10px; background: #444; border-radius: 4px;">
+        <h4>实时数据快照:</h4>
+        <p>理智: {{ playerData.status?.ap?.current }}/{{ playerData.status?.ap?.max }}</p>
+        <p>等级: {{ playerData.status?.level }}</p>
+        <p>干员数: {{ playerData.chars?.length }}</p>
+
+        <!-- 尝试各种可能的货币字段名 -->
+        <p>龙门币: {{
+          playerData.status?.lgCoin ||
+          playerData.status?.gold ||
+          playerData.status?.lmb ||
+          playerData.gold ||
+          'N/A'
+        }}</p>
+        <p>合成玉: {{
+          playerData.status?.synthesisStone ||
+          playerData.status?.orundum ||
+          playerData.orundum ||
+          'N/A'
+        }}</p>
+        <p>作战记录: {{
+          playerData.status?.practiceCard ||
+          playerData.status?.expCard ||
+          playerData.practiceCard ||
+          'N/A'
+        }}</p>
+        <p>赤金: {{ playerData.status?.gold || playerData.gold || 'N/A' }}</p>
+        <p>理智恢复时间: {{ playerData.status?.ap?.completeRecoveryTime ? new Date(playerData.status.ap.completeRecoveryTime * 1000).toLocaleTimeString() : 'N/A' }}</p>
+
+        <!-- 显示所有status字段 -->
+        <div style="margin-top: 10px; font-size: 12px; color: #ccc;">
+          <p><strong>Status字段列表:</strong></p>
+          <div style="background: #333; padding: 8px; border-radius: 4px; max-height: 200px; overflow-y: auto;">
+            <div v-for="(value, key) in playerData.status" :key="key" style="margin: 2px 0;">
+              {{ key }}: {{ typeof value === 'object' ? JSON.stringify(value) : value }}
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- 数据卡片区域（加载成功时显示） -->
@@ -471,7 +536,7 @@ watch(() => authStore.isLogin, async (newLoginState, oldLoginState) => {
         <li class="chars">雇佣干员：{{ getCharCount }}</li>
         <li class="assist-chars">助战干员：{{ getAssistCharCount }}</li>
         <li class="shizhuangshulinag">时装数量：{{ playerData?.skins?.length || 0 }}</li>
-        <li class="furniture">家具保有：{{ playerData?.building?.furniture || 0 }}</li>
+        <li class="furniture">家具保有：{{ playerData?.building?.furniture.total || 0 }}</li>
         <li class="shikezhang">蚀刻章：{{ playerData?.medal?.count || 0 }}</li>
       </ul>
 
