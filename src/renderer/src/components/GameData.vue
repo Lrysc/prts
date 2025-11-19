@@ -276,19 +276,6 @@ const getTrainingStatus = computed(() => {
 });
 
 /**
- * 获取保全派驻数据
- * @returns 保全派驻状态描述
- */
-const getTowerStatus = computed(() => {
-  const towerData = playerData.value?.tower?.reward;
-  if (!towerData) return '未开启';
-
-  const current = towerData.current || 0;
-  const total = towerData.total || 0;
-  return `${current}/${total} 数据增补仪`;
-});
-
-/**
  * 获取助战干员数量
  * @returns 助战干员数量
  */
@@ -811,10 +798,6 @@ onUnmounted(() => {
           <li class="data-item">
             <span class="label">剿灭作战</span>
             <span class="value">{{ getCampaignReward }} 合成玉</span>
-          </li>
-          <li class="data-item">
-            <span class="label">保全派驻</span>
-            <span class="value">{{ getTowerStatus }}</span>
           </li>
           <li class="data-item">
             <span class="label">集成战略</span>

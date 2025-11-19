@@ -25,55 +25,22 @@
         </div>
       </div>
 
-      <div class="setting-section">
-        <h3>账号管理</h3>
-        <div class="setting-actions">
-          <button
-            class="logout-btn"
-            @click="handleLogout"
-            :disabled="!authStore.isLogin || loggingOut"
-          >
-            {{ loggingOut ? '退出中...' : '退出登录' }}
-          </button>
-        </div>
-      </div>
+<!--      <div class="setting-section">-->
+<!--        <h3>账号管理</h3>-->
+<!--      </div>-->
 
       <div class="setting-tips">
         <p>更多设置功能开发中...</p>
-      </div>
-    </div>
-
-    <!-- 退出登录确认对话框 -->
-    <div class="logout-modal-overlay" v-if="showLogoutDialog" @click.self="showLogoutDialog = false">
-      <div class="logout-dialog">
-        <div class="dialog-header">
-          <h3>退出登录</h3>
-          <button class="close-btn" @click="showLogoutDialog = false">×</button>
-        </div>
-
-        <div class="dialog-content">
-          <p>确定要退出登录吗？</p>
-          <p class="dialog-tip">退出后需要重新登录才能使用相关功能</p>
-        </div>
-
-        <div class="dialog-actions">
-          <button class="cancel-btn" @click="showLogoutDialog = false">取消</button>
-          <button class="confirm-btn" @click="confirmLogout" :disabled="loggingOut">
-            {{ loggingOut ? '退出中...' : '确定退出' }}
-          </button>
-        </div>
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { computed } from 'vue'
 import { useAuthStore } from '@stores/auth'
 
 const authStore = useAuthStore()
-const showLogoutDialog = ref(false)
-const loggingOut = ref(false)
 
 /**
  * 获取游戏内UID
@@ -88,41 +55,6 @@ const gameUid = computed(() => {
   return defaultRole?.uid || '未获取'
 })
 
-/**
- * 处理退出登录点击
- */
-const handleLogout = () => {
-  if (!authStore.isLogin) {
-    return
-  }
-  showLogoutDialog.value = true
-}
-
-/**
- * 确认退出登录
- */
-const confirmLogout = async () => {
-  loggingOut.value = true
-  try {
-    // 执行退出登录操作
-    authStore.logout()
-
-    // 延迟关闭对话框，让用户看到退出成功
-    setTimeout(() => {
-      showLogoutDialog.value = false
-      loggingOut.value = false
-
-      // 可以在这里添加退出成功后的回调
-      console.log('退出登录成功')
-
-    }, 800)
-
-  } catch (error) {
-    console.error('退出登录失败:', error)
-    loggingOut.value = false
-    showLogoutDialog.value = false
-  }
-}
 </script>
 
 <style scoped>
@@ -245,38 +177,6 @@ const confirmLogout = async () => {
   font-size: 16px;
 }
 
-.setting-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 15px;
-}
-
-.logout-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center; /* 添加这一行使文字居中 */
-  gap: 10px;
-  padding: 12px 20px;
-  background: #ff6b6b;
-  color: white;
-  border: none;
-  border-radius: 6px;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background 0.3s ease;
-}
-
-.logout-btn:hover:not(:disabled) {
-  background: #ff5252;
-}
-
-.logout-btn:disabled {
-  background: #888;
-  cursor: not-allowed;
-  opacity: 0.7;
-}
-
 .setting-tips {
   text-align: center;
   padding: 20px;
@@ -287,39 +187,7 @@ const confirmLogout = async () => {
   border: 1px solid #404040;
 }
 
-/* 退出登录对话框样式 */
-.logout-modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background: rgba(0, 0, 0, 0.7);
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  z-index: 1000;
-}
 
-.logout-dialog {
-  background: #2d2d2d;
-  border-radius: 8px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
-  width: 400px;
-  max-width: 90vw;
-  animation: modalSlideIn 0.3s ease-out;
-  border: 1px solid #404040;
-}
-
-.dialog-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 16px 20px;
-  border-bottom: 1px solid #404040;
-  background: #3a3a3a;
-  border-radius: 8px 8px 0 0;
-}
 
 .dialog-header h3 {
   margin: 0;
@@ -328,88 +196,12 @@ const confirmLogout = async () => {
   font-weight: 600;
 }
 
-.close-btn {
-  background: none;
-  border: none;
-  font-size: 24px;
-  cursor: pointer;
-  color: #999;
-  width: 30px;
-  height: 30px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 4px;
-  transition: all 0.3s ease;
-}
-
-.close-btn:hover {
-  background: #4a4a4a;
-  color: #fff;
-}
-
-.dialog-content {
-  padding: 24px;
-  text-align: center;
-}
-
 .dialog-content p {
   margin: 0 0 12px 0;
   color: #ccc;
   font-size: 14px;
 }
 
-.dialog-tip {
-  color: #fad000 !important;
-  font-size: 12px !important;
-}
-
-.dialog-actions {
-  display: flex;
-  gap: 12px;
-  justify-content: center;
-  padding: 0 24px 24px;
-}
-
-.cancel-btn {
-  background: #555;
-  color: white;
-  border: none;
-  padding: 12px 24px;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 14px;
-  font-weight: 500;
-  transition: background 0.3s ease;
-  min-width: 80px;
-}
-
-.cancel-btn:hover {
-  background: #666;
-}
-
-.confirm-btn {
-  background: #ff6b6b;
-  color: white;
-  border: none;
-  padding: 12px 24px;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 14px;
-  font-weight: 500;
-  transition: background 0.3s ease;
-  min-width: 100px;
-}
-
-.confirm-btn:hover:not(:disabled) {
-  background: #ff5252;
-}
-
-.confirm-btn:disabled {
-  background: #888;
-  cursor: not-allowed;
-  opacity: 0.7;
-}
 
 @keyframes modalSlideIn {
   from {

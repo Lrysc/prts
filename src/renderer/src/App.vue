@@ -115,7 +115,7 @@ const componentMap: Record<string, any> = {
                 :class="['nav-item', { active: activeComponent === 'GameData' }]"
                 @click="switchComponent('GameData')"
               >
-                首页
+                游戏数据
               </li>
               <li
                 :class="['nav-item', { active: activeComponent === 'Recruit' }]"
