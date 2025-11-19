@@ -28,13 +28,6 @@ mac:
   notarize: false
 dmg:
   artifactName: ${name}-${version}.${ext}
-linux:
-  target:
-    - AppImage
-    - snap
-    - deb
-  maintainer: Lrysc 255958053@qq.com
-  category: Utility
 appImage:
   artifactName: ${name}-${version}.${ext}
 npmRebuild: false

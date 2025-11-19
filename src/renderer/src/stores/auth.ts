@@ -177,15 +177,25 @@ export const useAuthStore = defineStore('auth', {
       }
 
       console.log('正在获取绑定角色列表...');
-      
+
       try {
+        // 先验证cred是否有效
+        const isCredValid = await AuthAPI.checkCred(this.sklandCred);
+        if (!isCredValid) {
+          console.warn('Cred已失效，需要重新登录');
+          this.logout();
+          throw new Error('登录已过期，请重新登录');
+        }
+
         this.bindingRoles = await AuthAPI.getBindingRoles(this.sklandCred, this.sklandSignToken);
         console.log(`获取到 ${this.bindingRoles.length} 个绑定角色`);
         this.saveToLocalStorage(); // 更新本地存储
-      } catch (error) {
+      } catch (error: any) {
         console.error('获取绑定角色失败:', error);
-        // 如果是401错误，清除登录状态
-        if (error.message.includes('认证失败') || error.message.includes('401')) {
+        // 如果是401错误或cred失效，清除登录状态
+        if (error.message?.includes('认证失败') ||
+          error.message?.includes('401') ||
+          error.message?.includes('登录已过期')) {
           this.logout();
           throw new Error('登录已过期，请重新登录');
         }
@@ -212,10 +222,10 @@ export const useAuthStore = defineStore('auth', {
         this.playerData = await AuthAPI.getPlayerData(this.sklandCred, this.sklandSignToken, defaultUid);
         console.log('玩家数据获取成功');
         this.saveToLocalStorage(); // 更新本地存储
-      } catch (error) {
+      } catch (error: any) {
         console.error('获取玩家数据失败:', error);
         // 如果是401错误，清除登录状态
-        if (error.message.includes('认证失败') || error.message.includes('401')) {
+        if (error.message?.includes('认证失败') || error.message?.includes('401')) {
           this.logout();
           throw new Error('登录已过期，请重新登录');
         }

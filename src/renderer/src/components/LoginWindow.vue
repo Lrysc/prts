@@ -9,6 +9,7 @@ const emit = defineEmits<{
 }>()
 
 const authStore = useAuthStore();
+
 const formData = reactive({
   phone: '',
   password: '',
@@ -19,12 +20,6 @@ const loading = ref(false);
 const errorMsg = ref('');
 const smsBtnText = ref('发送验证码');
 const smsBtnDisabled = ref(false);
-
-// 切换登录方式
-const toggleLoginType = () => {
-  formData.loginType = formData.loginType === 'password' ? 'sms' : 'password';
-  errorMsg.value = '';
-};
 
 // 发送验证码
 const sendSmsCode = async () => {

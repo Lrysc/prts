@@ -19,7 +19,7 @@ function createWindow(): void {
       sandbox: false,
       nodeIntegration: false,
       contextIsolation: true,
-      webSecurity: true,
+      webSecurity: false, // 禁用webSecurity以避免CORS问题
       allowRunningInsecureContent: false
     }
   })
@@ -87,7 +87,7 @@ function createWindow(): void {
     { urls: ['*://*/*'] },
     (details, callback) => {
       const responseHeaders = { ...details.responseHeaders }
-      
+
       if (is.dev) {
         // 开发环境：允许热重载，但尽量减少不安全配置
         responseHeaders['Content-Security-Policy'] = [
@@ -111,7 +111,7 @@ function createWindow(): void {
           "frame-src 'none';"
         ]
       }
-      
+
       callback({ responseHeaders })
     }
   )

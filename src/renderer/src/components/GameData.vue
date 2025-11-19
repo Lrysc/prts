@@ -16,55 +16,16 @@ const isAttending = ref(false);
 const attendanceMsg = ref('');
 const currentTime = ref<number>(Math.floor(Date.now() / 1000));
 
-// 刷新相关状态
-const REFRESH_COOLDOWN = 30000; // 30秒冷却时间
-const lastRefreshTime = ref<number>(0);
-const refreshCooldownRemaining = ref<number>(0);
-const refreshRetryCount = ref<number>(0);
-const MAX_RETRY_COUNT = 3;
-
-// 定时器
+// 定时更新当前时间，确保时间相关计算始终准确
 let timeUpdateInterval: NodeJS.Timeout | null = null;
-let cooldownInterval: NodeJS.Timeout | null = null;
 
 // 缓存相关
 const CACHE_DURATION = 5 * 60 * 1000; // 5分钟缓存
 const dataCache = ref<{ data: any; timestamp: number } | null>(null);
 
 /**
- * 检查是否可以刷新
- */
-const canRefresh = computed(() => {
-  return refreshCooldownRemaining.value <= 0 &&
-    !isRefreshing.value &&
-    !isLoading.value &&
-    authStore.isLogin;
-});
-
-/**
- * 更新冷却时间显示
- */
-const updateCooldownDisplay = () => {
-  const now = Date.now();
-  const timeSinceLastRefresh = now - lastRefreshTime.value;
-
-  if (timeSinceLastRefresh < REFRESH_COOLDOWN) {
-    refreshCooldownRemaining.value = Math.ceil((REFRESH_COOLDOWN - timeSinceLastRefresh) / 1000);
-  } else {
-    refreshCooldownRemaining.value = 0;
-  }
-};
-
-/**
- * 格式化冷却时间
- */
-const formatCooldown = computed(() => {
-  if (refreshCooldownRemaining.value <= 0) return '';
-  return `${refreshCooldownRemaining.value}s`;
-});
-
-/**
  * 获取当前最新时间戳（秒级）
+ * @returns 当前时间戳
  */
 const getCurrentTimestamp = () => {
   return currentTime.value;
@@ -72,6 +33,8 @@ const getCurrentTimestamp = () => {
 
 /**
  * 格式化时间戳为本地日期时间
+ * @param ts 时间戳（秒级）
+ * @returns 格式化后的字符串
  */
 const formatTimestamp = (ts?: number) => {
   if (!ts) return '未知';
@@ -86,6 +49,8 @@ const formatTimestamp = (ts?: number) => {
 
 /**
  * 计算实际理智数值 - 基于Kotlin代码逻辑
+ * @param apData 理智数据对象
+ * @returns 实际理智数值
  */
 const calculateActualAp = (apData: any) => {
   if (!apData) return { current: 0, max: 0, remainSecs: -1, recoverTime: -1 };
@@ -95,6 +60,7 @@ const calculateActualAp = (apData: any) => {
   const current = apData.current || 0;
   const completeRecoveryTime = apData.completeRecoveryTime || 0;
 
+  // 基于Kotlin代码的逻辑
   if (current >= max) {
     return {
       current: current,
@@ -113,6 +79,7 @@ const calculateActualAp = (apData: any) => {
     };
   }
 
+  // 计算实际当前理智
   const actualCurrent = max - Math.floor((completeRecoveryTime - currentTs) / (60 * 6) + 1);
   const remainSecs = completeRecoveryTime - currentTs;
 
@@ -126,6 +93,8 @@ const calculateActualAp = (apData: any) => {
 
 /**
  * 格式化理智恢复时间
+ * @param recoveryTs 恢复完成时间戳（秒级）
+ * @returns 剩余时间字符串
  */
 const formatRecoveryTime = (recoveryTs?: number) => {
   if (!recoveryTs || recoveryTs <= 0) return '已回满';
@@ -142,7 +111,8 @@ const formatRecoveryTime = (recoveryTs?: number) => {
 };
 
 /**
- * 计算干员总数
+ * 计算干员总数（遍历chars数组）
+ * @returns 干员数量
  */
 const getCharCount = computed(() => {
   return playerData.value?.chars?.length || 0;
@@ -151,24 +121,20 @@ const getCharCount = computed(() => {
 /**
  * 修复作战进度显示逻辑
  * 根据API文档：全通关时mainStageProgress返回空，其他情况显示最新抵达的关卡
+ * @returns 作战进度描述
  */
 const getMainStageProgress = computed(() => {
   const status = playerData.value?.status;
   if (!status) return '未知';
-
-  // 优先使用mainStageProgress字段
-  if (status.mainStageProgress) {
-    return status.mainStageProgress;
-  }
 
   // 如果mainStageProgress为空字符串，表示全通关
   if (status.mainStageProgress === '') {
     return '主线全通关';
   }
 
-  // 如果没有mainStageProgress，尝试从其他字段推断
-  if (status.mainStage) {
-    return status.mainStage;
+  // 如果mainStageProgress有值，显示具体的关卡进度
+  if (status.mainStageProgress && typeof status.mainStageProgress === 'string') {
+    return status.mainStageProgress.trim();
   }
 
   // 最后回退到默认值
@@ -176,7 +142,9 @@ const getMainStageProgress = computed(() => {
 });
 
 /**
- * 格式化任务进度
+ * 格式化任务进度（已完成/总数）
+ * @param task 任务数据对象
+ * @returns 进度字符串
  */
 const formatTaskProgress = (task?: { completedCount?: number; totalCount?: number }) => {
   if (!task) return '0/0';
@@ -185,70 +153,83 @@ const formatTaskProgress = (task?: { completedCount?: number; totalCount?: numbe
 
 /**
  * 获取公开招募状态
+ * @returns 招募状态描述
  */
 const getHireStatus = computed(() => {
   const hireData = playerData.value?.building?.hire;
   if (!hireData || !Array.isArray(hireData.slots)) return '未开启';
 
+  // 检查是否有正在进行的招募
   const activeHire = hireData.slots.some((slot: any) => slot.completeWorkTime > getCurrentTimestamp());
   return activeHire ? '招募中' : '空闲';
 });
 
 /**
  * 获取会客室线索总数
+ * @returns 线索数量
  */
 const getClueCount = computed(() => {
   const clueBoard = playerData.value?.building?.meeting?.clue?.board;
   if (!clueBoard) return 0;
 
+  // 计算所有线索数量总和
   return clueBoard.reduce((total: number, clue: any) => total + (clue.count || 0), 0);
 });
 
 /**
  * 获取制造站运行状态
+ * @returns 制造站状态描述
  */
 const getManufactureStatus = computed(() => {
   const manufactures = playerData.value?.building?.manufactures;
   if (!manufactures || !Array.isArray(manufactures) || manufactures.length === 0) return '0/3 运行中';
 
+  // 计算正在运行的制造站数量
   const activeCount = manufactures.filter((mfg: any) => mfg.status === 'working').length;
   return `${activeCount}/${manufactures.length} 运行中`;
 });
 
 /**
  * 获取贸易站运行状态
+ * @returns 贸易站状态描述
  */
 const getTradingStatus = computed(() => {
   const tradings = playerData.value?.building?.tradings;
   if (!tradings || !Array.isArray(tradings) || tradings.length === 0) return '0/3 运行中';
 
+  // 计算正在运行的贸易站数量
   const activeCount = tradings.filter((trade: any) => trade.status === 'working').length;
   return `${activeCount}/${tradings.length} 运行中`;
 });
 
 /**
  * 获取宿舍休息人数
+ * @returns 休息人数
  */
 const getDormRestCount = computed(() => {
   const dormitories = playerData.value?.building?.dormitories;
   if (!dormitories) return 0;
 
+  // 计算所有宿舍休息人数总和
   return dormitories.reduce((total: number, dorm: any) => total + (dorm.restCount || 0), 0);
 });
 
 /**
  * 获取训练室状态
+ * @returns 训练室状态描述
  */
 const getTrainingStatus = computed(() => {
   const trainees = playerData.value?.building?.training?.trainee;
   if (!trainees || !Array.isArray(trainees) || trainees.length === 0) return '0/2 训练中';
 
+  // 计算正在训练的干员数量
   const activeCount = trainees.filter((t: any) => t.completeTime > getCurrentTimestamp()).length;
   return `${activeCount}/${trainees.length} 训练中`;
 });
 
 /**
  * 获取保全派驻数据
+ * @returns 保全派驻状态描述
  */
 const getTowerStatus = computed(() => {
   const towerData = playerData.value?.tower?.reward;
@@ -261,6 +242,7 @@ const getTowerStatus = computed(() => {
 
 /**
  * 获取助战干员数量
+ * @returns 助战干员数量
  */
 const getAssistCharCount = computed(() => {
   return playerData.value?.assistChars?.length || 0;
@@ -268,6 +250,7 @@ const getAssistCharCount = computed(() => {
 
 /**
  * 获取收藏品数量（肉鸽）
+ * @returns 收藏品数量
  */
 const getRelicCount = computed(() => {
   return playerData.value?.rogue?.relicCnt || 0;
@@ -275,6 +258,7 @@ const getRelicCount = computed(() => {
 
 /**
  * 获取实际理智信息
+ * @returns 理智信息对象
  */
 const getActualApInfo = computed(() => {
   const apData = playerData.value?.status?.ap;
@@ -282,32 +266,11 @@ const getActualApInfo = computed(() => {
 });
 
 /**
- * 显示操作消息
- */
-const showOperationMessage = (message: string) => {
-  attendanceMsg.value = message;
-  setTimeout(() => {
-    if (attendanceMsg.value === message) {
-      attendanceMsg.value = '';
-    }
-  }, 3000);
-};
-
-/**
  * 加载游戏数据核心方法
  */
-const fetchGameData = async (refresh = false, force = false) => {
-  // 检查刷新冷却（强制刷新除外）
-  if (refresh && !force) {
-    const now = Date.now();
-    if (now - lastRefreshTime.value < REFRESH_COOLDOWN) {
-      console.log('刷新冷却中，跳过请求');
-      return;
-    }
-  }
-
+const fetchGameData = async (refresh = false) => {
   // 检查缓存（非强制刷新时）
-  if (!refresh && !force && dataCache.value && dataCache.value.data) {
+  if (!refresh && dataCache.value && dataCache.value.data) {
     const currentMs = Date.now();
     const cacheAge = currentMs - dataCache.value.timestamp;
     if (cacheAge < CACHE_DURATION) {
@@ -319,45 +282,43 @@ const fetchGameData = async (refresh = false, force = false) => {
     }
   }
 
-  // 设置加载状态
   if (refresh) {
     isRefreshing.value = true;
-    lastRefreshTime.value = Date.now();
-    refreshCooldownRemaining.value = REFRESH_COOLDOWN / 1000;
   } else {
     isLoading.value = true;
   }
-
   errorMsg.value = '';
 
   try {
-    console.log('开始加载游戏数据...', refresh ? '(刷新)' : '', force ? '(强制)' : '');
+    console.log('开始加载游戏数据...');
 
-    // 检查登录状态
+    // 1. 检查登录状态，未登录则抛出错误
     if (!authStore.isLogin) {
+      console.log('用户未登录');
       throw new Error('请先登录账号');
     }
 
-    // 检查绑定角色
+    console.log('用户已登录，检查绑定角色...');
+
+    // 2. 检查绑定角色，无角色则获取角色列表
     if (!authStore.bindingRoles || authStore.bindingRoles.length === 0) {
       console.log('没有绑定角色，正在获取...');
       await authStore.fetchBindingRoles();
-
-      if (!authStore.bindingRoles || authStore.bindingRoles.length === 0) {
-        throw new Error('未找到绑定的游戏角色');
-      }
     }
 
-    // 获取默认角色
+    console.log(`当前绑定角色数量: ${authStore.bindingRoles.length}`);
+
+    // 3. 获取默认角色
     const targetRole = authStore.bindingRoles.find((role: any) => role.isDefault) || authStore.bindingRoles[0];
 
     if (!targetRole) {
+      console.log('未找到绑定的游戏角色');
       throw new Error('未找到绑定的游戏角色');
     }
 
     console.log(`使用角色: ${targetRole.nickName} (${targetRole.uid})`);
 
-    // 调用API获取玩家详细数据
+    // 4. 调用API获取玩家详细数据
     const data = await AuthAPI.getPlayerData(
       authStore.sklandCred,
       authStore.sklandSignToken,
@@ -367,81 +328,34 @@ const fetchGameData = async (refresh = false, force = false) => {
     console.log('玩家数据获取成功');
     playerData.value = data;
     lastUpdateTime.value = Date.now();
-    refreshRetryCount.value = 0; // 重置重试计数
 
     // 更新缓存
     dataCache.value = {
       data: data,
-      timestamp: Date.now()
+      timestamp: getCurrentTimestamp() * 1000
     };
 
     console.log('游戏数据加载完成并已缓存');
-
-    // 显示成功消息
-    if (refresh) {
-      showOperationMessage('数据刷新成功');
-    }
-
   } catch (error: any) {
     console.error('GameData load error:', error);
-    refreshRetryCount.value++;
+    errorMsg.value = error.message || '游戏数据加载失败，请稍后重试';
 
-    // 错误处理
-    if (error.response?.status === 401) {
-      errorMsg.value = '登录已过期，请重新登录';
-      authStore.logout();
-    } else if (error.response?.status === 429) {
-      errorMsg.value = '请求过于频繁，请稍后重试';
-    } else if (error.message?.includes('Network Error')) {
-      errorMsg.value = '网络连接失败，请检查网络设置';
-    } else if (error.message?.includes('未找到绑定的游戏角色')) {
-      errorMsg.value = '未找到游戏角色，请检查账号绑定';
-    } else {
-      errorMsg.value = error.message || '游戏数据加载失败，请稍后重试';
+    // 确保在出错时也停止加载状态
+    if (!refresh) {
+      isLoading.value = false;
     }
-
-    // 自动重试逻辑
-    if (refreshRetryCount.value < MAX_RETRY_COUNT && !error.response?.status) {
-      console.log(`加载失败，${3}秒后重试... (${refreshRetryCount.value}/${MAX_RETRY_COUNT})`);
-      setTimeout(() => {
-        fetchGameData(refresh, true);
-      }, 3000);
-    }
-
   } finally {
     isLoading.value = false;
     isRefreshing.value = false;
+    console.log('加载状态已重置');
   }
 };
 
 /**
  * 刷新数据
  */
-const refreshData = () => {
-  if (!canRefresh.value) {
-    console.log('刷新功能暂时不可用');
-    return;
-  }
-
-  console.log('开始手动刷新数据...');
-  fetchGameData(true);
-};
-
-/**
- * 强制刷新数据（忽略缓存和冷却）
- */
-const forceRefresh = () => {
-  console.log('强制刷新数据...');
-  dataCache.value = null;
-  refreshRetryCount.value = 0;
-  fetchGameData(true, true);
-};
-
-/**
- * 重新加载数据
- */
-const retryLoadData = () => {
-  fetchGameData();
+const refreshData = async () => {
+  await fetchGameData(true);
 };
 
 /**
@@ -457,18 +371,34 @@ const handleAttendance = async () => {
   attendanceMsg.value = '';
 
   try {
-    // 验证cred是否还有效
+    // 先验证cred是否还有效
+    console.log('=== 验证cred有效性 ===');
     const isCredValid = await AuthAPI.checkCred(authStore.sklandCred);
+    console.log('Cred有效性:', isCredValid);
+
     if (!isCredValid) {
       throw new Error('Cred已失效，请重新登录');
     }
 
     const targetRole = authStore.bindingRoles.find((role: any) => role.isDefault) || authStore.bindingRoles[0];
+
     if (!targetRole) {
       throw new Error('未找到绑定的游戏角色');
     }
 
+    console.log('=== 绑定角色调试信息 ===');
+    console.log('完整的绑定角色列表:', JSON.stringify(authStore.bindingRoles, null, 2));
+    console.log('选中的角色信息:', JSON.stringify(targetRole, null, 2));
+    console.log('角色UID:', targetRole.uid);
+    console.log('channelMasterId:', targetRole.channelMasterId);
+    console.log('========================');
+
+    // gameId需要是uint32类型，使用channelMasterId并转换为数字
     const gameId = targetRole.channelMasterId;
+    console.log('使用的gameId:', gameId);
+    console.log('gameId类型:', typeof gameId);
+    console.log('转换为数字:', parseInt(gameId));
+
     const attendanceData = await AuthAPI.attendance(
       authStore.sklandCred,
       authStore.sklandSignToken,
@@ -476,9 +406,11 @@ const handleAttendance = async () => {
       gameId
     );
 
+    // 检查是否已经签到
     if (attendanceData.alreadyAttended) {
       attendanceMsg.value = '今日已签到';
     } else {
+      // 解析签到奖励
       const awards = attendanceData.awards || [];
       const awardTexts = awards.map((award: any) => {
         const count = award.count || 0;
@@ -489,6 +421,7 @@ const handleAttendance = async () => {
       attendanceMsg.value = `签到成功！获得：${awardTexts}`;
     }
 
+    // 3秒后清除签到消息
     setTimeout(() => {
       attendanceMsg.value = '';
     }, 3000);
@@ -505,20 +438,19 @@ const handleAttendance = async () => {
 onMounted(async () => {
   console.log('GameData组件挂载，开始初始化...');
 
-  // 启动时间更新定时器
+  // 启动时间更新定时器，每秒更新一次确保时间准确性
   timeUpdateInterval = setInterval(() => {
     currentTime.value = Math.floor(Date.now() / 1000);
   }, 1000);
 
-  // 启动冷却时间更新定时器
-  cooldownInterval = setInterval(updateCooldownDisplay, 1000);
-
   try {
+    // 监听登录状态变化，登录后自动加载数据
     if (authStore.isLogin) {
       console.log('用户已登录，直接加载数据');
       await fetchGameData();
     } else {
       console.log('用户未登录，尝试恢复登录状态');
+      // 未登录时尝试恢复登录状态
       const isRestored = await authStore.restoreAuthState();
       if (isRestored) {
         console.log('登录状态恢复成功，加载数据');
@@ -536,11 +468,12 @@ onMounted(async () => {
   }
 });
 
-// 监听登录状态变化
+// 监听登录状态变化，登录后自动刷新数据
 watch(() => authStore.isLogin, async (newLoginState, oldLoginState) => {
   if (newLoginState && !oldLoginState) {
+    // 从未登录变为已登录
     console.log('检测到登录状态变化，清除缓存并重新加载数据');
-    dataCache.value = null;
+    dataCache.value = null; // 清除缓存
     await fetchGameData();
   }
 });
@@ -550,21 +483,15 @@ onUnmounted(() => {
   if (timeUpdateInterval) {
     clearInterval(timeUpdateInterval);
     timeUpdateInterval = null;
+    console.log('时间更新定时器已清理');
   }
-
-  if (cooldownInterval) {
-    clearInterval(cooldownInterval);
-    cooldownInterval = null;
-  }
-
-  console.log('所有定时器已清理');
 });
 </script>
 
 <template>
   <div class="game-data-container">
     <!-- 加载状态提示 -->
-    <div class="loading-container" v-if="isLoading && !isRefreshing">
+    <div class="loading-container" v-if="isLoading">
       <div class="spinner"></div>
       <p class="loading-text">加载游戏数据中...</p>
     </div>
@@ -572,13 +499,7 @@ onUnmounted(() => {
     <!-- 数据加载失败提示 -->
     <div class="error-container" v-else-if="errorMsg">
       <p class="error-text">{{ errorMsg }}</p>
-      <div class="error-actions">
-        <button class="retry-btn" @click="retryLoadData">重新加载</button>
-        <button class="force-retry-btn" @click="forceRefresh">强制刷新</button>
-        <span class="retry-count" v-if="refreshRetryCount > 0">
-          重试: {{ refreshRetryCount }}/{{ MAX_RETRY_COUNT }}
-        </span>
-      </div>
+      <button class="retry-btn" @click="() => fetchGameData()">重新加载</button>
     </div>
 
     <!-- 数据卡片区域（加载成功时显示） -->
@@ -590,15 +511,9 @@ onUnmounted(() => {
             <span class="last-update" v-if="lastUpdateTime">
               最后更新：{{ formatTimestamp(Math.floor(lastUpdateTime / 1000)) }}
             </span>
-            <span class="cooldown-info" v-if="refreshCooldownRemaining > 0">
-              （{{ formatCooldown }}后可刷新）
-            </span>
           </div>
-          <!-- 操作消息提示 -->
-          <div class="operation-message" v-if="attendanceMsg" :class="{
-            success: !attendanceMsg.includes('失败'),
-            error: attendanceMsg.includes('失败')
-          }">
+          <!-- 签到消息提示 -->
+          <div class="attendance-message" v-if="attendanceMsg" :class="{ success: !attendanceMsg.includes('失败'), error: attendanceMsg.includes('失败') }">
             {{ attendanceMsg }}
           </div>
         </div>
@@ -606,34 +521,22 @@ onUnmounted(() => {
           <button
             class="attendance-btn"
             @click="handleAttendance"
-            :disabled="isAttending || !authStore.isLogin"
+            :disabled="isAttending"
             :class="{ attending: isAttending }"
           >
             <span v-if="isAttending">签到中...</span>
             <span v-else>每日签到</span>
           </button>
-
           <button
             class="refresh-btn"
             @click="refreshData"
-            :disabled="!canRefresh"
-            :class="{
-              refreshing: isRefreshing,
-              cooldown: refreshCooldownRemaining > 0
-            }"
+            :disabled="isRefreshing"
+            :class="{ refreshing: isRefreshing }"
           >
-            <span class="refresh-icon">🔄</span>
             <span v-if="isRefreshing">刷新中...</span>
-            <span v-else-if="refreshCooldownRemaining > 0">冷却({{ formatCooldown }})</span>
             <span v-else>刷新数据</span>
           </button>
         </div>
-      </div>
-
-      <!-- 刷新加载指示器 -->
-      <div class="refresh-indicator" v-if="isRefreshing">
-        <div class="refresh-spinner"></div>
-        <span>正在刷新数据...</span>
       </div>
 
       <!-- 用户信息卡片 -->
@@ -701,6 +604,7 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+/* 容器样式 */
 .game-data-container {
   padding: 20px;
   max-width: 1200px;
@@ -749,15 +653,8 @@ onUnmounted(() => {
   max-width: 400px;
 }
 
-.error-actions {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  margin-top: 12px;
-}
-
 .retry-btn {
-  padding: 10px 16px;
+  padding: 10px 24px;
   background: #646cff;
   color: white;
   border: none;
@@ -770,54 +667,11 @@ onUnmounted(() => {
   background: #747bff;
 }
 
-.force-retry-btn {
-  padding: 10px 16px;
-  background: #ff9800;
-  color: white;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: background 0.3s ease;
-}
-
-.force-retry-btn:hover {
-  background: #f57c00;
-}
-
-.retry-count {
-  font-size: 12px;
-  color: #999;
-  margin-left: 8px;
-}
-
 /* 卡片容器样式 */
 .cards-wrapper {
   display: flex;
   flex-direction: column;
   gap: 20px;
-  position: relative;
-}
-
-/* 刷新指示器 */
-.refresh-indicator {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 12px 16px;
-  background: rgba(100, 108, 255, 0.1);
-  border: 1px solid #646cff;
-  border-radius: 6px;
-  color: #646cff;
-  font-size: 14px;
-}
-
-.refresh-spinner {
-  width: 16px;
-  height: 16px;
-  border: 2px solid rgba(100, 108, 255, 0.2);
-  border-top: 2px solid #646cff;
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
 }
 
 /* 数据头部操作栏 */
@@ -842,13 +696,12 @@ onUnmounted(() => {
 .header-buttons {
   display: flex;
   gap: 10px;
-  align-items: center;
 }
 
-/* 按钮基础样式 */
-.attendance-btn,
-.refresh-btn {
-  padding: 8px 12px;
+.attendance-btn {
+  padding: 8px 16px;
+  background: #4caf50;
+  color: white;
   border: none;
   border-radius: 6px;
   cursor: pointer;
@@ -857,12 +710,6 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 6px;
-}
-
-/* 签到按钮 */
-.attendance-btn {
-  background: #4caf50;
-  color: white;
 }
 
 .attendance-btn:hover:not(:disabled) {
@@ -880,10 +727,48 @@ onUnmounted(() => {
   background: #ffa500;
 }
 
-/* 刷新按钮 */
+.attendance-message {
+  padding: 6px 12px;
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.attendance-message.success {
+  background: rgba(76, 175, 80, 0.2);
+  color: #4caf50;
+  border: 1px solid #4caf50;
+}
+
+.attendance-message.error {
+  background: rgba(244, 67, 54, 0.2);
+  color: #f44336;
+  border: 1px solid #f44336;
+}
+
+.update-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.last-update {
+  color: #999;
+  font-size: 14px;
+}
+
 .refresh-btn {
+  padding: 8px 16px;
   background: #646cff;
   color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .refresh-btn:hover:not(:disabled) {
@@ -899,51 +784,6 @@ onUnmounted(() => {
 
 .refresh-btn.refreshing {
   background: #ffa500;
-}
-
-.refresh-btn.cooldown {
-  background: #666;
-}
-
-.refresh-icon {
-  font-size: 12px;
-}
-
-/* 更新信息 */
-.update-info {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.last-update {
-  color: #999;
-  font-size: 14px;
-}
-
-.cooldown-info {
-  color: #ff9800;
-  font-size: 12px;
-}
-
-/* 操作消息提示 */
-.operation-message {
-  padding: 6px 12px;
-  border-radius: 4px;
-  font-size: 14px;
-  font-weight: 500;
-}
-
-.operation-message.success {
-  background: rgba(76, 175, 80, 0.2);
-  color: #4caf50;
-  border: 1px solid #4caf50;
-}
-
-.operation-message.error {
-  background: rgba(244, 67, 54, 0.2);
-  color: #f44336;
-  border: 1px solid #f44336;
 }
 
 /* 用户信息卡片样式 */
@@ -974,6 +814,7 @@ onUnmounted(() => {
   background: #3a3a3a;
 }
 
+/* 用户卡片特殊样式 */
 .UserCard .name {
   color: #9feaf9;
   font-weight: 600;
@@ -1048,6 +889,7 @@ onUnmounted(() => {
   background: #3a3a3a;
 }
 
+/* 游戏卡片特殊样式 */
 .GameCard .daily {
   color: #9feaf9;
 }
@@ -1104,6 +946,7 @@ onUnmounted(() => {
   color: #00bcd4;
 }
 
+/* 游戏卡片辅助文本样式 */
 .GameCard .refresh-time {
   display: block;
   font-size: 12px;
@@ -1137,16 +980,8 @@ onUnmounted(() => {
   }
 
   .header-buttons {
-    flex-direction: row;
-    flex-wrap: wrap;
+    flex-direction: column;
     gap: 8px;
-  }
-
-  .attendance-btn,
-  .refresh-btn {
-    flex: 1;
-    min-width: 120px;
-    justify-content: center;
   }
 }
 
@@ -1158,10 +993,6 @@ onUnmounted(() => {
 
   .game-data-container {
     padding: 10px;
-  }
-
-  .header-buttons {
-    flex-direction: column;
   }
 }
 

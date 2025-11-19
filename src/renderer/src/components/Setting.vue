@@ -11,10 +11,7 @@
           <div class="user-details">
             <p class="user-name">{{ authStore.userName }}</p>
             <p class="user-level">等级: {{ authStore.userLevel }}</p>
-            <p class="user-uid">用户ID: {{ authStore.userId }}</p>
-            <p class="user-role-count" v-if="authStore.bindingRoles.length > 0">
-              绑定角色: {{ authStore.bindingRoles.length }} 个
-            </p>
+            <p class="user-uid">游戏ID: {{ gameUid }}</p>
             <p class="login-status">状态: <span class="status-online">已登录</span></p>
           </div>
         </div>
@@ -71,12 +68,25 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useAuthStore } from '@stores/auth'
 
 const authStore = useAuthStore()
 const showLogoutDialog = ref(false)
 const loggingOut = ref(false)
+
+/**
+ * 获取游戏内UID
+ */
+const gameUid = computed(() => {
+  if (!authStore.isLogin || !authStore.bindingRoles.length) {
+    return '未获取'
+  }
+
+  // 获取默认角色或第一个角色的UID
+  const defaultRole = authStore.bindingRoles.find(role => role.isDefault) || authStore.bindingRoles[0]
+  return defaultRole?.uid || '未获取'
+})
 
 /**
  * 处理退出登录点击
@@ -180,7 +190,7 @@ const confirmLogout = async () => {
   font-size: 16px;
 }
 
-.user-level, .user-uid, .user-role-count, .login-status {
+.user-level, .user-uid, .login-status {
   color: #ccc;
   font-size: 12px;
   margin-bottom: 2px;
