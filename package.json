@@ -1,6 +1,6 @@
 {
   "name": "prts",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "PRTS系统助手",
   "main": "./out/main/index.js",
   "author": "Lrysc",
