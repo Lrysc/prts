@@ -24,6 +24,17 @@ function createWindow(): void {
     }
   })
 
+  // 设置 Windows 应用详情，解决任务栏显示问题
+  if (process.platform === 'win32') {
+    mainWindow.setAppDetails({
+      appId: 'com.prts.app',
+      appIconPath: join(__dirname, '../../build/icon.ico'),
+      appIconIndex: 0,
+      relaunchCommand: process.execPath,
+      relaunchDisplayName: 'PRTS系统'
+    })
+  }
+
   // 允许跨域请求的域名列表
   const allowedOrigins = [
     'https://as.hypergryph.com',
@@ -145,8 +156,9 @@ function createWindow(): void {
 
 // 应用初始化
 app.whenReady().then(() => {
-  // 设置应用ID
-  electronApp.setAppUserModelId('com.prts')
+  // 设置应用ID - 修复任务栏显示问题
+  app.setAppUserModelId('com.prts.app')
+  electronApp.setAppUserModelId('com.prts.app')
 
   // 权限请求处理
   session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {

@@ -2,8 +2,9 @@
   "name": "prts",
   "version": "0.2.3",
   "description": "PRTS系统助手",
+  "productName": "PRTS系统",
   "main": "./out/main/index.js",
-  "author": "Lrysc",
+  "author": "Lrysc 255958053@qq.com",
   "homepage": "https://github.com/Lrysc/prts/tree/master",
   "scripts": {
     "format": "prettier --write .",
