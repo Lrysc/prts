@@ -23,6 +23,22 @@ export default defineConfig({
         '@services': resolve('src/renderer/src/services')
       }
     },
-    plugins: [vue()]
+    plugins: [vue()],
+    server: {
+      proxy: {
+        '/api/hg': {
+          target: 'https://as.hypergryph.com',
+          changeOrigin: true,
+          rewrite: (path) => path.replace(/^\/api\/hg/, ''),
+          secure: true
+        },
+        '/api/skland': {
+          target: 'https://zonai.skland.com',
+          changeOrigin: true,
+          rewrite: (path) => path.replace(/^\/api\/skland/, ''),
+          secure: true
+        }
+      }
+    }
   }
 })

@@ -1,19 +1,23 @@
 import { getDId, getSignedHeaders } from '../utils/api/security';
 
 // 基础配置
+const isDev = import.meta.env.DEV;
 const API_BASE = {
-  hgAuth: 'https://as.hypergryph.com',
-  skland: 'https://zonai.skland.com'
+  hgAuth: isDev ? '/api/hg' : 'https://as.hypergryph.com',
+  skland: isDev ? '/api/skland' : 'https://zonai.skland.com'
 };
 
 // 通用请求头（基于网页观察）
-const COMMON_HEADERS = {
-  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36 Edg/142.0.0.0',
-  'Accept-Encoding': 'gzip, deflate, br, zstd',
-  'Connection': 'close',
-  'Content-Type': 'application/json',
-  'Origin': 'https://www.skland.com',
-  'Referer': 'https://www.skland.com/'
+const getCommonHeaders = () => {
+  const isDev = import.meta.env.DEV;
+  return {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36 Edg/142.0.0.0',
+    'Accept-Encoding': 'gzip, deflate, br, zstd',
+    'Connection': 'close',
+    'Content-Type': 'application/json',
+    'Origin': isDev ? 'http://localhost:5173' : 'https://www.skland.com',
+    'Referer': isDev ? 'http://localhost:5173/' : 'https://www.skland.com/'
+  };
 };
 
 // 登录相关接口
@@ -24,7 +28,7 @@ export const AuthAPI = {
     const response = await fetch(`${API_BASE.hgAuth}/user/auth/v1/token_by_phone_password`, {
       method: 'POST',
       headers: {
-        ...COMMON_HEADERS,
+        ...getCommonHeaders(),
         'dId': dId,
         'platform': '3',
         'vName': '1.0.0'
@@ -49,7 +53,7 @@ export const AuthAPI = {
     const response = await fetch(`${API_BASE.hgAuth}/general/v1/send_phone_code`, {
       method: 'POST',
       headers: {
-        ...COMMON_HEADERS,
+        ...getCommonHeaders(),
         'dId': dId,
         'platform': '3',
         'vName': '1.0.0'
@@ -74,7 +78,7 @@ export const AuthAPI = {
     const response = await fetch(`${API_BASE.hgAuth}/user/auth/v2/token_by_phone_code`, {
       method: 'POST',
       headers: {
-        ...COMMON_HEADERS,
+        ...getCommonHeaders(),
         'dId': dId,
         'platform': '3',
         'vName': '1.0.0'
@@ -99,7 +103,7 @@ export const AuthAPI = {
     const response = await fetch(`${API_BASE.hgAuth}/user/oauth2/v2/grant`, {
       method: 'POST',
       headers: {
-        ...COMMON_HEADERS,
+        ...getCommonHeaders(),
         'dId': dId,
         'platform': '3',
         'vName': '1.0.0'
@@ -128,7 +132,7 @@ export const AuthAPI = {
     const response = await fetch(`${API_BASE.skland}/api/v1/user/auth/generate_cred_by_code`, {
       method: 'POST',
       headers: {
-        ...COMMON_HEADERS,
+        ...getCommonHeaders(),
         'dId': dId,
         'platform': '3',
         'vName': '1.0.0'
@@ -212,7 +216,7 @@ export const AuthAPI = {
     const response = await fetch(`${API_BASE.skland}/api/v1/user/check`, {
       method: 'GET',
       headers: {
-        ...COMMON_HEADERS,
+        ...getCommonHeaders(),
         'Cred': cred
       }
     });

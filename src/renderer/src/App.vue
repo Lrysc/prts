@@ -92,8 +92,6 @@ const componentMap: Record<string, any> = {
               >
                 材料计算
               </li>
-              <li :class="['nav-item', { active: activeComponent === 'Setting' }]"
-                  @click="switchComponent('Setting')">设置</li>
             </ul>
           </div>
         </nav>

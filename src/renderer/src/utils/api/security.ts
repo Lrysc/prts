@@ -71,7 +71,18 @@ export function getSignedHeaders(
   cred: string,
   token: string
 ): Record<string, string> {
-  const urlObj = new URL(url);
+  // 处理开发环境的相对URL
+  let fullUrl = url;
+  if (url.startsWith('/api/')) {
+    // 开发环境，将相对URL转换为完整URL用于签名计算
+    if (url.startsWith('/api/hg')) {
+      fullUrl = 'https://as.hypergryph.com' + url.replace('/api/hg', '');
+    } else if (url.startsWith('/api/skland')) {
+      fullUrl = 'https://zonai.skland.com' + url.replace('/api/skland', '');
+    }
+  }
+  
+  const urlObj = new URL(fullUrl);
   const path = urlObj.pathname;
 
   let bodyOrQuery = '';

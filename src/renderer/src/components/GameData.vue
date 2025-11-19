@@ -146,34 +146,56 @@ const getMainStageProgress = computed(() => {
  * @param task 任务数据对象
  * @returns 进度字符串
  */
-const formatTaskProgress = (task?: { completedCount?: number; totalCount?: number }) => {
+const formatTaskProgress = (task?: { completed?: number; total?: number }) => {
   if (!task) return '0/0';
-  return `${task.completedCount || 0}/${task.totalCount || 0}`;
+  return `${task.completed || 0}/${task.total || 0}`;
 };
 
 /**
- * 获取公开招募状态
- * @returns 招募状态描述
+ * 获取公开招募刷新次数 - 修正为0/3
+ * @returns 刷新次数
  */
-const getHireStatus = computed(() => {
-  const hireData = playerData.value?.building?.hire;
-  if (!hireData || !Array.isArray(hireData.slots)) return '未开启';
-
-  // 检查是否有正在进行的招募
-  const activeHire = hireData.slots.some((slot: any) => slot.completeWorkTime > getCurrentTimestamp());
-  return activeHire ? '招募中' : '空闲';
+const getHireRefreshCount = computed(() => {
+  const refreshCount = playerData.value?.building?.hire?.refreshCount || 0;
+  return `${refreshCount}/3`;
 });
 
 /**
- * 获取会客室线索总数
+ * 获取公开招募位置数量
+ * @returns 招募位置数量
+ */
+const getHireSlotCount = computed(() => {
+  const slots = playerData.value?.building?.hire?.slots;
+  if (!Array.isArray(slots)) return '0/4';
+
+  const totalSlots = slots.length;
+  const activeSlots = slots.filter(slot => slot.state === 1).length; // state=1表示正在招募
+  return `${activeSlots}/${totalSlots}`;
+});
+
+/**
+ * 获取会客室线索总数 - 修正为7个位置
  * @returns 线索数量
  */
 const getClueCount = computed(() => {
+  // 尝试多种可能的路径
   const clueBoard = playerData.value?.building?.meeting?.clue?.board;
-  if (!clueBoard) return 0;
+  const meetingRoom = playerData.value?.building?.meeting;
 
-  // 计算所有线索数量总和
-  return clueBoard.reduce((total: number, clue: any) => total + (clue.count || 0), 0);
+  console.log('会客室数据调试:', { clueBoard, meetingRoom });
+
+  let clueCount = 0;
+
+  if (Array.isArray(clueBoard)) {
+    clueCount = clueBoard.reduce((total: number, clue: any) => total + (clue.count || 0), 0);
+  } else if (meetingRoom?.ownClues && Array.isArray(meetingRoom.ownClues)) {
+    clueCount = meetingRoom.ownClues.length;
+  } else if (meetingRoom?.clue?.own && Array.isArray(meetingRoom.clue.own)) {
+    clueCount = meetingRoom.clue.own.length;
+  }
+
+  // 会客室最多7个线索位置
+  return `${clueCount}/7`;
 });
 
 /**
@@ -182,7 +204,7 @@ const getClueCount = computed(() => {
  */
 const getManufactureStatus = computed(() => {
   const manufactures = playerData.value?.building?.manufactures;
-  if (!manufactures || !Array.isArray(manufactures) || manufactures.length === 0) return '0/3 运行中';
+  if (!manufactures || !Array.isArray(manufactures) || manufactures.length === 0) return '0/0 运行中';
 
   // 计算正在运行的制造站数量
   const activeCount = manufactures.filter((mfg: any) => mfg.status === 'working').length;
@@ -190,28 +212,54 @@ const getManufactureStatus = computed(() => {
 });
 
 /**
- * 获取贸易站运行状态
- * @returns 贸易站状态描述
+ * 获取贸易站订单数量
+ * @returns 订单数量
  */
-const getTradingStatus = computed(() => {
+const getTradingOrderCount = computed(() => {
   const tradings = playerData.value?.building?.tradings;
-  if (!tradings || !Array.isArray(tradings) || tradings.length === 0) return '0/3 运行中';
+  if (!tradings || !Array.isArray(tradings)) return '0 订单';
 
-  // 计算正在运行的贸易站数量
-  const activeCount = tradings.filter((trade: any) => trade.status === 'working').length;
-  return `${activeCount}/${tradings.length} 运行中`;
+  // 计算所有贸易站的订单总数
+  const totalOrders = tradings.reduce((total: number, trading: any) => {
+    // 订单可能在slots或orders字段中
+    const slots = trading.slots || trading.orders || [];
+    return total + slots.length;
+  }, 0);
+
+  return `${totalOrders} 订单`;
 });
 
 /**
- * 获取宿舍休息人数
+ * 获取无人机数据 - 修正为正确的数据结构
+ * @returns 无人机数量
+ */
+const getLaborCount = computed(() => {
+  const labor = playerData.value?.building?.labor;
+  console.log('无人机数据调试:', labor);
+
+  // 尝试不同的字段名
+  const current = labor?.value || labor?.count || labor?.current || 0;
+  const max = labor?.maxValue || labor?.max || 0;
+
+  return `${current}/${max}`;
+});
+
+/**
+ * 获取宿舍休息人数 - 修正数据结构
  * @returns 休息人数
  */
 const getDormRestCount = computed(() => {
   const dormitories = playerData.value?.building?.dormitories;
-  if (!dormitories) return 0;
+  console.log('宿舍数据调试:', dormitories);
+
+  if (!dormitories || !Array.isArray(dormitories)) return 0;
 
   // 计算所有宿舍休息人数总和
-  return dormitories.reduce((total: number, dorm: any) => total + (dorm.restCount || 0), 0);
+  return dormitories.reduce((total: number, dorm: any) => {
+    // 尝试不同的字段名
+    const restCount = dorm.restCount || dorm.chars?.length || dorm.characterCount || 0;
+    return total + restCount;
+  }, 0);
 });
 
 /**
@@ -220,7 +268,7 @@ const getDormRestCount = computed(() => {
  */
 const getTrainingStatus = computed(() => {
   const trainees = playerData.value?.building?.training?.trainee;
-  if (!trainees || !Array.isArray(trainees) || trainees.length === 0) return '0/2 训练中';
+  if (!trainees || !Array.isArray(trainees) || trainees.length === 0) return '0/0 训练中';
 
   // 计算正在训练的干员数量
   const activeCount = trainees.filter((t: any) => t.completeTime > getCurrentTimestamp()).length;
@@ -266,6 +314,74 @@ const getActualApInfo = computed(() => {
 });
 
 /**
+ * 获取疲劳干员数量
+ * @returns 疲劳干员数量
+ */
+const getTiredCharsCount = computed(() => {
+  return playerData.value?.building?.tiredChars?.length || 0;
+});
+
+/**
+ * 获取剿灭作战合成玉进度
+ * @returns 合成玉进度
+ */
+const getCampaignReward = computed(() => {
+  const reward = playerData.value?.campaign?.reward;
+  return `${reward?.current || 0}/${reward?.total || 0}`;
+});
+
+/**
+ * 获取数据增补仪进度
+ * @returns 数据增补仪进度
+ */
+const getTowerLowerItem = computed(() => {
+  const lowerItem = playerData.value?.tower?.reward?.lowerItem;
+  return `${lowerItem?.current || 0}/${lowerItem?.total || 0}`;
+});
+
+/**
+ * 获取数据增补条进度
+ * @returns 数据增补条进度
+ */
+const getTowerHigherItem = computed(() => {
+  const higherItem = playerData.value?.tower?.reward?.higherItem;
+  return `${higherItem?.current || 0}/${higherItem?.total || 0}`;
+});
+
+/**
+ * 获取每日任务进度
+ * @returns 每日任务进度
+ */
+const getDailyTaskProgress = computed(() => {
+  const daily = playerData.value?.routine?.daily;
+  console.log('每日任务数据调试:', daily);
+  return formatTaskProgress(daily);
+});
+
+/**
+ * 获取每周任务进度
+ * @returns 每周任务进度
+ */
+const getWeeklyTaskProgress = computed(() => {
+  const weekly = playerData.value?.routine?.weekly;
+  console.log('每周任务数据调试:', weekly);
+  return formatTaskProgress(weekly);
+});
+
+/**
+ * 调试数据函数 - 用于检查数据结构
+ */
+const debugData = () => {
+  console.log('=== 完整玩家数据 ===', playerData.value);
+  console.log('=== 任务数据 ===', playerData.value?.routine);
+  console.log('=== 基建数据 ===', playerData.value?.building);
+  console.log('=== 宿舍数据 ===', playerData.value?.building?.dormitories);
+  console.log('=== 会客室数据 ===', playerData.value?.building?.meeting);
+  console.log('=== 无人机数据 ===', playerData.value?.building?.labor);
+  console.log('=== 贸易站数据 ===', playerData.value?.building?.tradings);
+};
+
+/**
  * 加载游戏数据核心方法
  */
 const fetchGameData = async (refresh = false) => {
@@ -278,6 +394,7 @@ const fetchGameData = async (refresh = false) => {
       playerData.value = dataCache.value.data;
       lastUpdateTime.value = currentMs;
       isLoading.value = false;
+      debugData(); // 调试数据
       return;
     }
   }
@@ -334,6 +451,9 @@ const fetchGameData = async (refresh = false) => {
       data: data,
       timestamp: getCurrentTimestamp() * 1000
     };
+
+    // 调试输出数据结构
+    debugData();
 
     console.log('游戏数据加载完成并已缓存');
   } catch (error: any) {
@@ -427,8 +547,8 @@ const handleAttendance = async () => {
     }, 3000);
 
   } catch (error: any) {
-    attendanceMsg.value = error.message || '签到失败，请稍后重试';
     console.error('签到失败:', error);
+    attendanceMsg.value = error.message || '签到失败，请稍后重试';
   } finally {
     isAttending.value = false;
   }
@@ -499,7 +619,7 @@ onUnmounted(() => {
     <!-- 数据加载失败提示 -->
     <div class="error-container" v-else-if="errorMsg">
       <p class="error-text">{{ errorMsg }}</p>
-      <button class="retry-btn" @click="() => fetchGameData()">重新加载</button>
+      <button class="retry-btn" @click="fetchGameData()">重新加载</button>
     </div>
 
     <!-- 数据卡片区域（加载成功时显示） -->
@@ -518,14 +638,21 @@ onUnmounted(() => {
           </div>
         </div>
         <div class="header-buttons">
+          <!-- 森空岛签到图标按钮 -->
           <button
-            class="attendance-btn"
+            class="attendance-icon-btn"
             @click="handleAttendance"
             :disabled="isAttending"
             :class="{ attending: isAttending }"
+            :title="isAttending ? '签到中...' : '每日签到'"
           >
-            <span v-if="isAttending">签到中...</span>
-            <span v-else>每日签到</span>
+            <img
+              src="@assets/icon_skland.svg"
+              alt="森空岛签到"
+              class="skland-icon"
+            />
+            <span class="attendance-tooltip" v-if="isAttending">签到中...</span>
+            <span class="attendance-tooltip" v-else>每日签到</span>
           </button>
           <button
             class="refresh-btn"
@@ -536,82 +663,176 @@ onUnmounted(() => {
             <span v-if="isRefreshing">刷新中...</span>
             <span v-else>刷新数据</span>
           </button>
+<!--          <button-->
+<!--            class="debug-btn"-->
+<!--            @click="debugData"-->
+<!--          >-->
+<!--            调试数据-->
+<!--          </button>-->
         </div>
       </div>
 
-      <!-- 用户信息卡片 -->
-      <ul class="UserCard">
-        <li class="name">Dr.{{ playerData?.status?.name || '未知' }}</li>
-        <li class="level">等级：{{ playerData?.status?.level || 0 }}</li>
-        <li class="apcurrent">
-          理智：{{ getActualApInfo.current }}/{{ getActualApInfo.max }}
-          <span class="ap-recover" v-if="getActualApInfo.remainSecs > 0">
-            （{{ formatRecoveryTime(getActualApInfo.recoverTime) }} 回满）
-          </span>
-          <span class="ap-full" v-else>（已回满）</span>
-        </li>
-        <li class="registerTs">入职日：{{ formatTimestamp(playerData?.status?.registerTs) }}</li>
-        <li class="mainStageProgress">
-          作战进度：{{ getMainStageProgress }}
-        </li>
-        <li class="chars">雇佣干员：{{ getCharCount }}</li>
-        <li class="assist-chars">助战干员：{{ getAssistCharCount }}</li>
-        <li class="shizhuangshulinag">时装数量：{{ playerData?.skins?.length || 0 }}</li>
-        <li class="furniture">家具保有：{{ playerData?.building?.furniture.total || 0 }}</li>
-        <li class="shikezhang">蚀刻章：{{ playerData?.medal?.count || 0 }}</li>
-      </ul>
+      <!-- Header 信息卡片 -->
+      <div class="section-card">
+        <h3 class="section-title">--- 基本信息 ---</h3>
+        <ul class="data-grid">
+          <li class="data-item">
+            <span class="label">入职日期</span>
+            <span class="value">{{ formatTimestamp(playerData?.status?.registerTs) }}</span>
+          </li>
+          <li class="data-item">
+            <span class="label">游戏昵称</span>
+            <span class="value">Dr.{{ playerData?.status?.name || '未知' }}</span>
+          </li>
+          <li class="data-item">
+            <span class="label">作战进度</span>
+            <span class="value">{{ getMainStageProgress }}</span>
+          </li>
+          <li class="data-item">
+            <span class="label">家具保有数</span>
+            <span class="value">{{ playerData?.building?.furniture?.total || 0 }}</span>
+          </li>
+          <li class="data-item">
+            <span class="label">雇佣干员数</span>
+            <span class="value">{{ getCharCount }}</span>
+          </li>
+        </ul>
+      </div>
 
-      <!-- 游戏功能数据卡片 -->
-      <ul class="GameCard">
-        <li class="daily">
-          每日任务: {{ formatTaskProgress(playerData?.routine?.daily) }}
-          <span class="refresh-time" v-if="playerData?.routine?.daily?.refreshTime">
-            （{{ formatTimestamp(playerData.routine.daily.refreshTime) }} 刷新）
-          </span>
-        </li>
-        <li class="week">
-          每周任务: {{ formatTaskProgress(playerData?.routine?.weekly) }}
-          <span class="refresh-time" v-if="playerData?.routine?.weekly?.refreshTime">
-            （{{ formatTimestamp(playerData.routine.weekly.refreshTime) }} 刷新）
-          </span>
-        </li>
-        <li class="completeWorkTime">
-          公开招募: {{ getHireStatus }}
-        </li>
-        <li class="refreshCount">公招刷新: {{ playerData?.building?.hire?.refreshCount || 0 }}/4</li>
-        <li class="wurenji">无人机：{{ playerData?.building?.labor?.count || 0 }}/{{ playerData?.building?.labor?.max || 0 }}</li>
-        <li class="meetingroom">
-          会客室：{{ getClueCount }} 条线索
-          <span v-if="getClueCount >= 9" class="clue-full">（已满）</span>
-        </li>
-        <li class="zhizaozhan">制造站：{{ getManufactureStatus }}</li>
-        <li class="maoyizhan">贸易站：{{ getTradingStatus }}</li>
-        <li class="resttime">休息进度：{{ getDormRestCount }} 人休息中</li>
-        <li class="tired">干员疲劳：{{ playerData?.building?.tiredChars?.length || 0 }} 人</li>
-        <li class="xunlianshi">训练室：{{ getTrainingStatus }}</li>
-        <li class="jiaomie">
-          剿灭：{{ playerData?.campaign?.reward?.current || 0 }}/{{ playerData?.campaign?.reward?.total || 0 }} 合成玉
-        </li>
-        <li class="tower">
-          保全派驻：{{ getTowerStatus }}
-        </li>
-        <li class="rogue">
-          肉鸽收藏品：{{ getRelicCount }}
-        </li>
-      </ul>
+      <!-- 助战干员卡片 -->
+      <div class="section-card">
+        <h3 class="section-title">--- 助战干员 ---</h3>
+        <ul class="data-grid">
+          <li class="data-item">
+            <span class="label">助战干员数量</span>
+            <span class="value">{{ getAssistCharCount }}</span>
+          </li>
+        </ul>
+      </div>
+
+      <!-- 实时数据卡片 -->
+      <div class="section-card">
+        <h3 class="section-title">--- 实时数据 ---</h3>
+        <ul class="data-grid">
+          <li class="data-item">
+            <span class="label">理智</span>
+            <span class="value">{{ getActualApInfo.current }}/{{ getActualApInfo.max }}</span>
+            <span class="sub-value" v-if="getActualApInfo.remainSecs > 0">
+              {{ formatRecoveryTime(getActualApInfo.recoverTime) }} 回满
+            </span>
+            <span class="sub-value" v-else>已回满</span>
+          </li>
+          <li class="data-item">
+            <span class="label">公开招募位置</span>
+            <span class="value">{{ getHireSlotCount }}</span>
+          </li>
+          <li class="data-item">
+            <span class="label">公招刷新次数</span>
+            <span class="value">{{ getHireRefreshCount }}</span>
+          </li>
+          <li class="data-item">
+            <span class="label">训练室</span>
+            <span class="value">{{ getTrainingStatus }}</span>
+          </li>
+          <li class="data-item">
+            <span class="label">每周报酬合成玉</span>
+            <span class="value">{{ getCampaignReward }}</span>
+          </li>
+          <li class="data-item">
+            <span class="label">每日任务</span>
+            <span class="value">{{ getDailyTaskProgress }}</span>
+          </li>
+          <li class="data-item">
+            <span class="label">每周任务</span>
+            <span class="value">{{ getWeeklyTaskProgress }}</span>
+          </li>
+          <li class="data-item">
+            <span class="label">数据增补仪</span>
+            <span class="value">{{ getTowerLowerItem }}</span>
+          </li>
+          <li class="data-item">
+            <span class="label">数据增补条</span>
+            <span class="value">{{ getTowerHigherItem }}</span>
+          </li>
+        </ul>
+      </div>
+
+      <!-- 我的干员卡片 -->
+      <div class="section-card">
+        <h3 class="section-title">--- 我的干员 ---</h3>
+        <ul class="data-grid">
+          <li class="data-item">
+            <span class="label">干员总数</span>
+            <span class="value">{{ getCharCount }}</span>
+          </li>
+          <li class="data-item">
+            <span class="label">时装数量</span>
+            <span class="value">{{ playerData?.skins?.length || 0 }}</span>
+          </li>
+        </ul>
+      </div>
+
+      <!-- 基建数据卡片 -->
+      <div class="section-card">
+        <h3 class="section-title">--- 基建数据 ---</h3>
+        <ul class="data-grid">
+          <li class="data-item">
+            <span class="label">贸易站订单</span>
+            <span class="value">{{ getTradingOrderCount }}</span>
+          </li>
+          <li class="data-item">
+            <span class="label">制造站</span>
+            <span class="value">{{ getManufactureStatus }}</span>
+          </li>
+          <li class="data-item">
+            <span class="label">宿舍休息</span>
+            <span class="value">{{ getDormRestCount }} 人</span>
+          </li>
+          <li class="data-item">
+            <span class="label">会客室线索</span>
+            <span class="value">{{ getClueCount }}</span>
+            <span class="sub-value" v-if="getClueCount.startsWith('7/')">（已满）</span>
+          </li>
+          <li class="data-item">
+            <span class="label">干员疲劳</span>
+            <span class="value">{{ getTiredCharsCount }} 人</span>
+          </li>
+          <li class="data-item">
+            <span class="label">无人机</span>
+            <span class="value">{{ getLaborCount }}</span>
+          </li>
+        </ul>
+      </div>
+
+      <!-- 游戏战绩卡片 -->
+      <div class="section-card">
+        <h3 class="section-title">--- 游戏战绩 ---</h3>
+        <ul class="data-grid">
+          <li class="data-item">
+            <span class="label">剿灭作战</span>
+            <span class="value">{{ getCampaignReward }} 合成玉</span>
+          </li>
+          <li class="data-item">
+            <span class="label">保全派驻</span>
+            <span class="value">{{ getTowerStatus }}</span>
+          </li>
+          <li class="data-item">
+            <span class="label">集成战略</span>
+            <span class="value">{{ getRelicCount }} 收藏品</span>
+          </li>
+        </ul>
+      </div>
     </div>
   </div>
 </template>
 
 <style scoped>
-/* 容器样式 */
 .game-data-container {
   padding: 20px;
   max-width: 1200px;
   margin: 0 auto;
 }
 
-/* 加载状态样式 */
 .loading-container {
   display: flex;
   flex-direction: column;
@@ -636,7 +857,6 @@ onUnmounted(() => {
   color: #ccc;
 }
 
-/* 错误状态样式 */
 .error-container {
   display: flex;
   flex-direction: column;
@@ -667,14 +887,12 @@ onUnmounted(() => {
   background: #747bff;
 }
 
-/* 卡片容器样式 */
 .cards-wrapper {
   display: flex;
   flex-direction: column;
   gap: 20px;
 }
 
-/* 数据头部操作栏 */
 .data-header {
   display: flex;
   justify-content: space-between;
@@ -696,35 +914,92 @@ onUnmounted(() => {
 .header-buttons {
   display: flex;
   gap: 10px;
+  align-items: center;
 }
 
-.attendance-btn {
-  padding: 8px 16px;
-  background: #4caf50;
-  color: white;
-  border: none;
-  border-radius: 6px;
+/* 森空岛图标签到按钮样式 */
+.attendance-icon-btn {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  padding: 8px;
+  background: transparent;
+  border: 2px solid #4caf50;
+  border-radius: 50%;
   cursor: pointer;
   transition: all 0.3s ease;
-  font-size: 14px;
   display: flex;
   align-items: center;
-  gap: 6px;
+  justify-content: center;
 }
 
-.attendance-btn:hover:not(:disabled) {
-  background: #45a049;
-  transform: translateY(-1px);
+.attendance-icon-btn:hover:not(:disabled) {
+  background: rgba(76, 175, 80, 0.1);
+  border-color: #45a049;
+  transform: scale(1.05);
+  box-shadow: 0 4px 12px rgba(76, 175, 80, 0.3);
 }
 
-.attendance-btn:disabled {
-  background: #666;
+.attendance-icon-btn:disabled {
+  border-color: #666;
   cursor: not-allowed;
   opacity: 0.7;
 }
 
-.attendance-btn.attending {
-  background: #ffa500;
+.attendance-icon-btn.attending {
+  border-color: #ffa500;
+  animation: pulse 1.5s infinite;
+}
+
+.attendance-icon-btn.attending:hover {
+  border-color: #ff8c00;
+}
+
+.skland-icon {
+  width: 28px;
+  height: 28px;
+  filter: brightness(0) saturate(100%) invert(67%) sepia(51%) saturate(495%) hue-rotate(80deg) brightness(95%) contrast(89%);
+  transition: all 0.3s ease;
+}
+
+.attendance-icon-btn:hover .skland-icon {
+  filter: brightness(0) saturate(100%) invert(67%) sepia(51%) saturate(495%) hue-rotate(80deg) brightness(110%) contrast(89%);
+  transform: scale(1.1);
+}
+
+.attendance-icon-btn.attending .skland-icon {
+  filter: brightness(0) saturate(100%) invert(75%) sepia(90%) saturate(500%) hue-rotate(360deg) brightness(105%) contrast(105%);
+}
+
+.attendance-tooltip {
+  position: absolute;
+  bottom: -30px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.8);
+  color: white;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s ease;
+}
+
+.attendance-icon-btn:hover .attendance-tooltip {
+  opacity: 1;
+}
+
+.update-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.last-update {
+  color: #999;
+  font-size: 14px;
 }
 
 .attendance-message {
@@ -744,17 +1019,6 @@ onUnmounted(() => {
   background: rgba(244, 67, 54, 0.2);
   color: #f44336;
   border: 1px solid #f44336;
-}
-
-.update-info {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.last-update {
-  color: #999;
-  font-size: 14px;
 }
 
 .refresh-btn {
@@ -786,184 +1050,96 @@ onUnmounted(() => {
   background: #ffa500;
 }
 
-/* 用户信息卡片样式 */
-.UserCard {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 15px;
-  list-style: none;
-  margin: 0;
-  padding: 24px;
+.debug-btn {
+  padding: 8px 16px;
+  background: #ff9800;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-size: 14px;
+}
+
+.debug-btn:hover {
+  background: #f57c00;
+  transform: translateY(-1px);
+}
+
+.section-card {
   background: #2d2d2d;
   border-radius: 8px;
   border: 1px solid #404040;
+  padding: 20px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }
 
-.UserCard li {
-  color: #ccc;
-  font-size: 14px;
-  padding: 10px 12px;
-  text-align: center;
-  border-radius: 4px;
-  background: #333333;
-  transition: background 0.3s ease;
-}
-
-.UserCard li:hover {
-  background: #3a3a3a;
-}
-
-/* 用户卡片特殊样式 */
-.UserCard .name {
+.section-title {
   color: #9feaf9;
+  font-size: 18px;
   font-weight: 600;
-  font-size: 16px;
+  margin-bottom: 16px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #404040;
+  text-align: center;
 }
 
-.UserCard .level {
-  color: #fad000;
-}
-
-.UserCard .apcurrent {
-  color: #6cc24a;
-}
-
-.UserCard .mainStageProgress {
-  color: #ff7eb9;
-}
-
-.UserCard .chars {
-  color: #7afcff;
-}
-
-.UserCard .assist-chars {
-  color: #ff9800;
-}
-
-.UserCard .shizhuangshulinag {
-  color: #ff65a3;
-}
-
-.UserCard .furniture {
-  color: #feff9c;
-}
-
-.UserCard .shikezhang {
-  color: #ff6b6b;
-}
-
-.UserCard .ap-recover,
-.UserCard .ap-full {
-  display: block;
-  font-size: 12px;
-  color: #999;
-  margin-top: 4px;
-}
-
-/* 游戏数据卡片样式 */
-.GameCard {
+.data-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 15px;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
   list-style: none;
   margin: 0;
-  padding: 24px;
-  background: #2d2d2d;
-  border-radius: 8px;
-  border: 1px solid #404040;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  padding: 0;
 }
 
-.GameCard li {
-  color: #ccc;
-  font-size: 14px;
-  padding: 10px 12px;
-  text-align: center;
-  border-radius: 4px;
+.data-item {
+  display: flex;
+  flex-direction: column;
+  padding: 12px;
   background: #333333;
+  border-radius: 6px;
   transition: background 0.3s ease;
+  border: 1px solid #404040;
 }
 
-.GameCard li:hover {
+.data-item:hover {
   background: #3a3a3a;
+  transform: translateY(-1px);
 }
 
-/* 游戏卡片特殊样式 */
-.GameCard .daily {
-  color: #9feaf9;
-}
-
-.GameCard .week {
-  color: #fad000;
-}
-
-.GameCard .completeWorkTime {
-  color: #6cc24a;
-}
-
-.GameCard .refreshCount {
-  color: #ff7eb9;
-}
-
-.GameCard .wurenji {
-  color: #7afcff;
-}
-
-.GameCard .meetingroom {
-  color: #ff65a3;
-}
-
-.GameCard .zhizaozhan {
-  color: #feff9c;
-}
-
-.GameCard .maoyizhan {
-  color: #ff6b6b;
-}
-
-.GameCard .resttime {
-  color: #6bffb8;
-}
-
-.GameCard .tired {
-  color: #c78dff;
-}
-
-.GameCard .xunlianshi {
-  color: #9feaf9;
-}
-
-.GameCard .jiaomie {
-  color: #fad000;
-}
-
-.GameCard .tower {
-  color: #9c27b0;
-}
-
-.GameCard .rogue {
-  color: #00bcd4;
-}
-
-/* 游戏卡片辅助文本样式 */
-.GameCard .refresh-time {
-  display: block;
+.label {
   font-size: 12px;
   color: #999;
-  margin-top: 4px;
+  margin-bottom: 4px;
+  font-weight: 500;
 }
 
-.GameCard .clue-full {
-  color: #ff6b6b;
+.value {
+  font-size: 16px;
+  color: #ccc;
+  font-weight: 600;
+}
+
+.sub-value {
   font-size: 12px;
-  margin-left: 4px;
+  color: #666;
+  margin-top: 2px;
 }
 
-/* 响应式适配 */
+.data-item:nth-child(1) .value { color: #9feaf9; }
+.data-item:nth-child(2) .value { color: #fad000; }
+.data-item:nth-child(3) .value { color: #6cc24a; }
+.data-item:nth-child(4) .value { color: #ff7eb9; }
+.data-item:nth-child(5) .value { color: #7afcff; }
+.data-item:nth-child(6) .value { color: #ff9800; }
+.data-item:nth-child(7) .value { color: #ff65a3; }
+.data-item:nth-child(8) .value { color: #feff9c; }
+.data-item:nth-child(9) .value { color: #ff6b6b; }
+.data-item:nth-child(10) .value { color: #6bffb8; }
+
 @media (max-width: 768px) {
-  .UserCard,
-  .GameCard {
+  .data-grid {
     grid-template-columns: repeat(2, 1fr);
   }
 
@@ -980,29 +1156,55 @@ onUnmounted(() => {
   }
 
   .header-buttons {
-    flex-direction: column;
+    flex-direction: row;
+    justify-content: flex-end;
     gap: 8px;
+  }
+
+  .attendance-icon-btn {
+    width: 40px;
+    height: 40px;
+  }
+
+  .skland-icon {
+    width: 24px;
+    height: 24px;
   }
 }
 
 @media (max-width: 480px) {
-  .UserCard,
-  .GameCard {
+  .data-grid {
     grid-template-columns: 1fr;
   }
 
   .game-data-container {
     padding: 10px;
   }
+
+  .header-buttons {
+    flex-direction: column;
+    gap: 8px;
+  }
 }
 
-/* 动画定义 */
 @keyframes spin {
   0% {
     transform: rotate(0deg);
   }
   100% {
     transform: rotate(360deg);
+  }
+}
+
+@keyframes pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(255, 165, 0, 0.4);
+  }
+  70% {
+    box-shadow: 0 0 0 10px rgba(255, 165, 0, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 165, 0, 0);
   }
 }
 </style>
