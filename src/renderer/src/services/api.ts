@@ -230,14 +230,14 @@ export const AuthAPI = {
   // 签到功能
   attendance: async (cred: string, signToken: string, uid: string, gameId: string) => {
     const url = `${API_BASE.skland}/api/v1/game/attendance`;
-    
+
     // 确保gameId是数字类型，并创建正确的请求体
     const gameIdNum = parseInt(gameId);
     const requestBody = { uid, gameId: gameIdNum };
-    
+
     // 使用正确的请求体进行签名
     const headers = getSignedHeaders(url, 'POST', requestBody, cred, signToken);
-    
+
     console.log('签到请求头:', headers);
     console.log('签到请求体:', requestBody);
 
@@ -275,23 +275,5 @@ export const AuthAPI = {
       throw new Error(data.message || '签到失败');
     }
     return data.data;
-  },
-
-  // 验证并刷新认证状态
-  validateAuth: async (cred: string, signToken: string) => {
-    try {
-      // 先验证cred有效性
-      const isValid = await AuthAPI.checkCred(cred);
-      if (!isValid) {
-        throw new Error('Cred已失效，请重新登录');
-      }
-
-      // 尝试获取绑定角色列表来验证完整认证
-      await AuthAPI.getBindingRoles(cred, signToken);
-      return true;
-    } catch (error) {
-      console.error('认证验证失败:', error);
-      return false;
-    }
   }
 };
