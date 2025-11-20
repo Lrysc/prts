@@ -129,7 +129,7 @@ const getMainStageProgress = computed(() => {
 
   // 如果mainStageProgress为空字符串，表示全通关
   if (status.mainStageProgress === '') {
-    return '主线全通关';
+    return '全部完成';
   }
 
   // 如果mainStageProgress有值，显示具体的关卡进度
