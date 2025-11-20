@@ -269,43 +269,98 @@ export const useGameDataStore = defineStore('gameData', () => {
   });
 
   /**
-   * 获取制造站运行状态
-   * 计算正在运行的制造站数量和总数
+   * 获取制造站运行状态和货物数量
+   * 根据 remain 字段计算已制造的货物数量
    */
   const getManufactureStatus = computed(() => {
     const manufactures = playerData.value?.building?.manufactures;
-    if (!manufactures || !Array.isArray(manufactures) || manufactures.length === 0) return '0/0 运行中';
 
-    const activeCount = manufactures.filter((mfg: any) => mfg.status === 'working').length;
-    return `${activeCount}/${manufactures.length} 运行中`;
+    // 移除所有 console.log 调试语句
+    if (!manufactures || !Array.isArray(manufactures) || manufactures.length === 0) return '0 货物 | 0/0 运行中';
+
+    // 计算总已制造货物数量
+    const totalManufactured = manufactures.reduce((total, mfg) => {
+      const remain = mfg.remain || 0;
+      return total + (99 - remain);
+    }, 0);
+
+    // 计算运行中的制造站数量
+    const totalStations = manufactures.length;
+    const activeStations = manufactures.filter((mfg: any) => {
+      return mfg.completeWorkTime > getCurrentTimestamp();
+    }).length;
+
+    return `${totalManufactured} 货物 | ${activeStations}/${totalStations} 运行中`;
   });
 
   /**
    * 获取贸易站订单数量
-   * 计算所有贸易站的总订单数
+   * 根据实际数据结构计算总订单上限和当前订单数量
    */
   const getTradingOrderCount = computed(() => {
     const tradings = playerData.value?.building?.tradings;
-    if (!tradings || !Array.isArray(tradings)) return '0 订单';
+    console.log('=== 贸易站数据调试 ===');
+    console.log('贸易站数组:', tradings);
 
-    const totalOrders = tradings.reduce((total: number, trading: any) => {
-      const slots = trading.slots || trading.orders || [];
-      return total + slots.length;
-    }, 0);
+    if (!tradings || !Array.isArray(tradings)) return '0/0 订单';
 
-    return `${totalOrders} 订单`;
+    let totalStockLimit = 0;  // 总订单上限
+    let totalCurrentStock = 0; // 当前订单数量
+
+    tradings.forEach((trading: any, index: number) => {
+      console.log(`贸易站 ${index + 1}:`, trading);
+
+      // 订单上限
+      const stockLimit = trading.stockLimit || 0;
+      // 当前订单数量（stock数组的长度）
+      const currentStock = Array.isArray(trading.stock) ? trading.stock.length : 0;
+
+      console.log(`贸易站 ${index + 1} - 上限: ${stockLimit}, 当前: ${currentStock}`);
+
+      totalStockLimit += stockLimit;
+      totalCurrentStock += currentStock;
+    });
+
+    console.log(`贸易站总计 - 上限: ${totalStockLimit}, 当前: ${totalCurrentStock}`);
+
+    return `${totalCurrentStock}/${totalStockLimit} 订单`;
   });
 
   /**
-   * 获取无人机数量
-   * 尝试多种字段名获取当前无人机数量和最大值
+   * 获取无人机数量和恢复时间
+   * 显示当前无人机数量/最大值，以及恢复时间
    */
   const getLaborCount = computed(() => {
     const labor = playerData.value?.building?.labor;
     const current = labor?.value || labor?.count || labor?.current || 0;
     const max = labor?.maxValue || labor?.max || 0;
-    return `${current}/${max}`;
+    const remainSecs = labor?.remainSecs || 0;
+
+    // 格式化恢复时间
+    const recoveryTime = formatRecoveryTimeFromSeconds(remainSecs);
+
+    return {
+      count: `${current}/${max}`,
+      recovery: remainSecs > 0 ? recoveryTime : '已回满',
+      remainSecs: remainSecs
+    };
   });
+
+  /**
+   * 从秒数格式化恢复时间
+   * 将秒数转换为易读的时间格式（小时和分钟）
+   * @param seconds - 剩余秒数
+   * @returns 格式化的时间字符串
+   */
+  const formatRecoveryTimeFromSeconds = (seconds: number) => {
+    if (!seconds || seconds <= 0) return '已回满';
+
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+
+    if (hours > 0) return `${hours}小时${minutes}分钟`;
+    return `${minutes}分钟`;
+  };
 
   /**
    * 获取宿舍休息人数
@@ -433,6 +488,9 @@ export const useGameDataStore = defineStore('gameData', () => {
     console.log('=== 会客室数据 ===', playerData.value?.building?.meeting);
     console.log('=== 无人机数据 ===', playerData.value?.building?.labor);
     console.log('=== 贸易站数据 ===', playerData.value?.building?.tradings);
+    console.log('=== 制造站数据 ===', playerData.value?.building?.manufactures);
+    console.log('=== 公招数据 ===', playerData.value?.building?.hire);
+    // console.log('=== 训练室数据 ===', playerData.value?.building?.training.trainee && playerData.value?.building?.training.trainer);
   };
 
   // ========== 核心方法 ==========

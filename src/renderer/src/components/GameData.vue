@@ -239,7 +239,7 @@ onUnmounted(() => {
             <span class="sub-value" v-else>已回满</span>
           </li>
           <li class="data-item">
-            <span class="label">公开招募位置</span>
+            <span class="label">公开招募</span>
             <span class="value">{{ gameDataStore.getHireSlotCount }}</span>
           </li>
           <li class="data-item">
@@ -315,7 +315,11 @@ onUnmounted(() => {
           </li>
           <li class="data-item">
             <span class="label">无人机</span>
-            <span class="value">{{ gameDataStore.getLaborCount }}</span>
+            <span class="value">{{ gameDataStore.getLaborCount.count }}</span>
+            <span class="sub-value" v-if="gameDataStore.getLaborCount.remainSecs > 0">
+        {{ gameDataStore.getLaborCount.recovery }} 回满
+      </span>
+            <span class="sub-value" v-else>已回满</span>
           </li>
         </ul>
       </div>
