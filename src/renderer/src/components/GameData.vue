@@ -4,19 +4,152 @@ import { useAuthStore } from '@stores/auth';
 import { useGameDataStore } from '@stores/gameData';
 import { AuthAPI } from '@services/api';
 
-// Store实例
+// ==================== Store实例 ====================
 const authStore = useAuthStore();
 const gameDataStore = useGameDataStore();
 
-// 组件内部状态
+// ==================== 组件状态管理 ====================
+
+// 签到相关状态
 const isAttending = ref(false);
 const attendanceMsg = ref('');
 
+// 右键菜单相关状态
+const contextMenuVisible = ref(false);
+const contextMenuPosition = ref({ x: 0, y: 0 });
+
+// 浮窗提示相关状态
+const toastVisible = ref(false);
+const toastMessage = ref('');
+const toastType = ref<'success' | 'error'>('success');
+const toastLeaving = ref(false); // 控制退出动画状态
+
+// ==================== 浮窗提示功能 ====================
+
 /**
- * 签到功能
+ * 显示浮窗提示
+ * @param message 提示消息内容
+ * @param type 提示类型：success成功 / error错误
+ */
+const showToast = (message: string, type: 'success' | 'error' = 'success') => {
+  // 如果已经有浮窗在显示，先隐藏它再显示新的
+  if (toastVisible.value) {
+    hideToast();
+    setTimeout(() => {
+      showNewToast(message, type);
+    }, 300);
+  } else {
+    showNewToast(message, type);
+  }
+};
+
+/**
+ * 显示新浮窗的内部方法
+ */
+const showNewToast = (message: string, type: 'success' | 'error') => {
+  toastMessage.value = message;
+  toastType.value = type;
+  toastLeaving.value = false; // 重置退出状态
+  toastVisible.value = true;
+
+  // 3秒后自动隐藏
+  setTimeout(() => {
+    hideToast();
+  }, 3000);
+};
+
+/**
+ * 隐藏浮窗（带退出动画效果）
+ */
+const hideToast = () => {
+  if (!toastVisible.value) return;
+
+  // 先设置退出状态，触发退出动画
+  toastLeaving.value = true;
+
+  // 等待动画完成后再隐藏元素
+  setTimeout(() => {
+    toastVisible.value = false;
+    toastLeaving.value = false; // 重置状态
+  }, 300);
+};
+
+// ==================== 右键菜单功能 ====================
+
+/**
+ * 显示右键菜单（带边缘检测防止被遮挡）
+ * @param event 鼠标事件对象
+ */
+const showContextMenu = (event: MouseEvent) => {
+  event.preventDefault(); // 阻止默认右键菜单
+  event.stopPropagation(); // 阻止事件冒泡
+
+  const menuWidth = 150; // 菜单宽度
+  const menuHeight = 50; // 菜单高度
+  const viewportWidth = window.innerWidth;
+  const viewportHeight = window.innerHeight;
+
+  // 计算菜单位置，防止被屏幕边缘遮挡
+  let x = event.clientX;
+  let y = event.clientY;
+
+  // 如果靠近右侧边缘，向左偏移
+  if (x + menuWidth > viewportWidth) {
+    x = viewportWidth - menuWidth - 10;
+  }
+
+  // 如果靠近底部边缘，向上偏移
+  if (y + menuHeight > viewportHeight) {
+    y = viewportHeight - menuHeight - 10;
+  }
+
+  // 确保位置不会超出屏幕边界
+  x = Math.max(10, Math.min(x, viewportWidth - menuWidth - 10));
+  y = Math.max(10, Math.min(y, viewportHeight - menuHeight - 10));
+
+  contextMenuPosition.value = { x, y };
+  contextMenuVisible.value = true;
+};
+
+/**
+ * 隐藏右键菜单
+ */
+const hideContextMenu = () => {
+  contextMenuVisible.value = false;
+};
+
+/**
+ * 处理容器点击事件（阻止冒泡）
+ */
+const handleContainerClick = (event: MouseEvent) => {
+  event.stopPropagation();
+};
+
+// ==================== 数据操作功能 ====================
+
+/**
+ * 处理刷新数据请求
+ */
+const handleRefresh = async () => {
+  hideContextMenu();
+
+  try {
+    await gameDataStore.refreshData();
+    showToast('数据刷新成功！', 'success');
+  } catch (error: any) {
+    // 安全的错误处理，避免未处理的Promise拒绝
+    const errorMessage = error?.message || '未知错误';
+    console.error('刷新数据失败:', error);
+    showToast(`刷新失败：${errorMessage}`, 'error');
+  }
+};
+
+/**
+ * 处理森空岛签到功能
  */
 const handleAttendance = async () => {
-  if (!authStore.isLogin || !authStore.bindingRoles.length) {
+  // 检查登录状态和绑定角色
+  if (!authStore.isLogin || !authStore.bindingRoles?.length) {
     gameDataStore.errorMsg = '请先登录并绑定游戏角色';
     return;
   }
@@ -25,7 +158,7 @@ const handleAttendance = async () => {
   attendanceMsg.value = '';
 
   try {
-    // 先验证cred是否还有效
+    // 验证cred有效性
     console.log('=== 验证cred有效性 ===');
     const isCredValid = await AuthAPI.checkCred(authStore.sklandCred);
     console.log('Cred有效性:', isCredValid);
@@ -34,8 +167,8 @@ const handleAttendance = async () => {
       throw new Error('Cred已失效，请重新登录');
     }
 
+    // 获取目标角色信息
     const targetRole = authStore.bindingRoles.find((role: any) => role.isDefault) || authStore.bindingRoles[0];
-
     if (!targetRole) {
       throw new Error('未找到绑定的游戏角色');
     }
@@ -50,6 +183,7 @@ const handleAttendance = async () => {
     const gameId = targetRole.channelMasterId;
     console.log('使用的gameId:', gameId);
 
+    // 执行签到请求
     const attendanceData = await AuthAPI.attendance(
       authStore.sklandCred,
       authStore.sklandSignToken,
@@ -57,11 +191,12 @@ const handleAttendance = async () => {
       gameId
     );
 
-    // 检查是否已经签到
+    // 处理签到结果
     if (attendanceData.alreadyAttended) {
       attendanceMsg.value = '今日已签到';
+      showToast('今日已签到', 'success');
     } else {
-      // 解析签到奖励
+      // 解析签到奖励信息
       const awards = attendanceData.awards || [];
       const awardTexts = awards.map((award: any) => {
         const count = award.count || 0;
@@ -70,6 +205,7 @@ const handleAttendance = async () => {
       }).join(', ');
 
       attendanceMsg.value = `签到成功！获得：${awardTexts}`;
+      showToast(`签到成功！获得：${awardTexts}`, 'success');
     }
 
     // 3秒后清除签到消息
@@ -78,19 +214,37 @@ const handleAttendance = async () => {
     }, 3000);
 
   } catch (error: any) {
+    // 安全的错误处理
+    const errorMsg = error?.message || '签到失败，请稍后重试';
     console.error('签到失败:', error);
-    attendanceMsg.value = error.message || '签到失败，请稍后重试';
+    attendanceMsg.value = errorMsg;
+    showToast(errorMsg, 'error');
   } finally {
     isAttending.value = false;
   }
 };
 
-// 组件挂载时加载数据
+// ==================== 生命周期管理 ====================
+
+/**
+ * 组件挂载时的初始化操作
+ */
 onMounted(async () => {
   console.log('GameData组件挂载，开始初始化...');
 
   // 启动时间更新定时器
   gameDataStore.startTimeUpdate();
+
+  // 添加全局事件监听器
+  document.addEventListener('click', hideContextMenu);
+  document.addEventListener('contextmenu', (event) => {
+    // 只在菜单显示时处理右键事件
+    if (!contextMenuVisible.value) return;
+    const target = event.target as HTMLElement;
+    if (!target.closest('.context-menu')) {
+      hideContextMenu();
+    }
+  });
 
   try {
     if (authStore.isLogin) {
@@ -109,29 +263,77 @@ onMounted(async () => {
       }
     }
   } catch (error) {
+    // 安全的错误处理
     console.error('GameData组件初始化失败:', error);
     gameDataStore.isLoading = false;
     gameDataStore.errorMsg = '初始化失败，请刷新页面重试';
   }
 });
 
-// 监听登录状态变化
+/**
+ * 监听登录状态变化
+ */
 watch(() => authStore.isLogin, async (newLoginState, oldLoginState) => {
   if (newLoginState && !oldLoginState) {
     console.log('检测到登录状态变化，清除缓存并重新加载数据');
     gameDataStore.clearCache();
-    await gameDataStore.fetchGameData();
+    try {
+      await gameDataStore.fetchGameData();
+    } catch (error) {
+      console.error('重新加载数据失败:', error);
+    }
   }
 });
 
-// 组件卸载时清理定时器
+/**
+ * 组件卸载时的清理操作
+ */
 onUnmounted(() => {
   gameDataStore.stopTimeUpdate();
+  document.removeEventListener('click', hideContextMenu);
+  document.removeEventListener('contextmenu', hideContextMenu);
 });
 </script>
 
 <template>
-  <div class="game-data-container">
+  <div class="game-data-container" @contextmenu="showContextMenu" @click="handleContainerClick">
+
+    <!-- ==================== 右键菜单组件 ==================== -->
+    <div
+      v-if="contextMenuVisible"
+      class="context-menu"
+      :style="{
+        left: `${contextMenuPosition.x}px`,
+        top: `${contextMenuPosition.y}px`
+      }"
+      @click.stop
+    >
+      <button
+        class="context-menu-item refresh-item"
+        @click="handleRefresh"
+        :disabled="gameDataStore.isRefreshing"
+        :class="{ refreshing: gameDataStore.isRefreshing }"
+      >
+        <span class="context-menu-text">
+          {{ gameDataStore.isRefreshing ? '刷新中...' : '刷新数据' }}
+        </span>
+      </button>
+    </div>
+
+    <!-- ==================== 浮窗提示组件 ==================== -->
+    <div
+      v-if="toastVisible"
+      class="toast-notification"
+      :class="[toastType, { leaving: toastLeaving }]"
+    >
+      <div class="toast-content">
+        <p class="toast-message">{{ toastMessage }}</p>
+      </div>
+      <button class="toast-close" @click="hideToast">×</button>
+    </div>
+
+    <!-- ==================== 主内容区域 ==================== -->
+
     <!-- 加载状态提示 -->
     <div class="loading-container" v-if="gameDataStore.isLoading">
       <div class="spinner"></div>
@@ -146,6 +348,7 @@ onUnmounted(() => {
 
     <!-- 数据卡片区域（加载成功时显示） -->
     <div class="cards-wrapper" v-else>
+
       <!-- 数据头部操作栏 -->
       <div class="data-header">
         <div class="left-section">
@@ -176,19 +379,10 @@ onUnmounted(() => {
             <span class="attendance-tooltip" v-if="isAttending">签到中...</span>
             <span class="attendance-tooltip" v-else>每日签到</span>
           </button>
-          <button
-            class="refresh-btn"
-            @click="gameDataStore.refreshData"
-            :disabled="gameDataStore.isRefreshing"
-            :class="{ refreshing: gameDataStore.isRefreshing }"
-          >
-            <span v-if="gameDataStore.isRefreshing">刷新中...</span>
-            <span v-else>刷新数据</span>
-          </button>
         </div>
       </div>
 
-      <!-- Header 信息卡片 -->
+      <!-- 基本信息卡片 -->
       <div class="section-card">
         <h3 class="section-title">--- 基本信息 ---</h3>
         <ul class="data-grid">
@@ -321,27 +515,6 @@ onUnmounted(() => {
             </span>
             <span class="sub-value" v-else>已回满</span>
           </li>
-
-<!--          <li class="data-item">-->
-            <!-- 在组件模板中使用 -->
-<!--            <div v-if="gameDataStore.getLaborCount">-->
-<!--              <p>无人机: {{ gameDataStore.getLaborCount.count }}</p>-->
-<!--              <p>回满时间: {{ gameDataStore.getLaborCount.recovery }}</p>-->
-<!--              <p>恢复进度: {{ gameDataStore.getLaborRecoveryProgress }}%</p>-->
-<!--              <p>恢复速率: {{ gameDataStore.getLaborRecoveryRate }} 个/小时</p>-->
-<!--            </div>-->
-
-            <!-- 或者使用详细信息 -->
-<!--            <div v-if="gameDataStore.getLaborRecoveryDetails">-->
-<!--              <p>当前: {{ gameDataStore.getLaborRecoveryDetails.current }}</p>-->
-<!--              <p>最大: {{ gameDataStore.getLaborRecoveryDetails.max }}</p>-->
-<!--              <p>剩余时间: {{ gameDataStore.getLaborRecoveryDetails.remainSeconds }}秒</p>-->
-<!--              <p>下次恢复: {{ gameDataStore.getLaborRecoveryDetails.nextRecoveryTime }}</p>-->
-<!--              <p>状态: {{ gameDataStore.getLaborRecoveryDetails.isFull ? '已满' : '恢复中' }}</p>-->
-<!--            </div>-->
-<!--            <span class="sub-value" v-else>已回满</span>-->
-<!--          </li>-->
-
         </ul>
       </div>
 
@@ -364,12 +537,170 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+/* ==================== 容器布局样式 ==================== */
 .game-data-container {
   padding: 20px;
   max-width: 1200px;
   margin: 0 auto;
+  min-height: 100vh;
+  position: relative;
+  user-select: none; /* 防止文本选中干扰右键菜单 */
 }
 
+/* ==================== 右键菜单样式 ==================== */
+.context-menu {
+  position: fixed;
+  background: #2d2d2d;
+  border: 1px solid #404040;
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+  z-index: 10000;
+  min-width: 150px;
+  padding: 8px;
+  animation: contextMenuSlideIn 0.15s ease-out;
+  backdrop-filter: blur(10px);
+}
+
+.context-menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 12px 16px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: #ccc;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 14px;
+  font-family: inherit;
+}
+
+.context-menu-item:hover:not(:disabled) {
+  background: #646cff;
+  color: white;
+}
+
+.context-menu-item:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.context-menu-item.refreshing {
+  background: #ffa500;
+  color: white;
+}
+
+.context-menu-text {
+  text-align: center;
+}
+
+/* 右键菜单进入动画 */
+@keyframes contextMenuSlideIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(-5px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* ==================== 浮窗提示样式 ==================== */
+.toast-notification {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  background: #2d2d2d;
+  border: 1px solid #404040;
+  border-radius: 8px;
+  padding: 16px 20px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+  z-index: 10001;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-width: 300px;
+  max-width: 450px;
+  animation: toastSlideIn 0.3s ease-out forwards; /* 进入动画 */
+  backdrop-filter: blur(10px);
+}
+
+/* 浮窗退出状态 */
+.toast-notification.leaving {
+  animation: toastSlideOut 0.3s ease-in forwards; /* 退出动画 */
+}
+
+/* 成功状态样式 */
+.toast-notification.success {
+  border-left: 4px solid #4caf50;
+  background: linear-gradient(90deg, rgba(76, 175, 80, 0.1) 0%, #2d2d2d 100%);
+}
+
+/* 错误状态样式 */
+.toast-notification.error {
+  border-left: 4px solid #f44336;
+  background: linear-gradient(90deg, rgba(244, 67, 54, 0.1) 0%, #2d2d2d 100%);
+}
+
+.toast-content {
+  flex: 1;
+}
+
+.toast-message {
+  margin: 0;
+  color: #fff;
+  font-size: 14px;
+  line-height: 1.4;
+  font-weight: 500;
+}
+
+.toast-close {
+  background: none;
+  border: none;
+  color: #999;
+  font-size: 20px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.toast-close:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+/* 浮窗进入动画 - 从右侧水平滑入 */
+@keyframes toastSlideIn {
+  from {
+    opacity: 0;
+    transform: translateX(100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* 浮窗退出动画 - 水平向右滑出 */
+@keyframes toastSlideOut {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(100%);
+  }
+}
+
+/* ==================== 加载状态样式 ==================== */
 .loading-container {
   display: flex;
   flex-direction: column;
@@ -394,6 +725,7 @@ onUnmounted(() => {
   color: #ccc;
 }
 
+/* ==================== 错误状态样式 ==================== */
 .error-container {
   display: flex;
   flex-direction: column;
@@ -424,6 +756,7 @@ onUnmounted(() => {
   background: #747bff;
 }
 
+/* ==================== 主内容区域样式 ==================== */
 .cards-wrapper {
   display: flex;
   flex-direction: column;
@@ -454,7 +787,7 @@ onUnmounted(() => {
   align-items: center;
 }
 
-/* 森空岛图标签到按钮样式 */
+/* ==================== 签到按钮样式 ==================== */
 .attendance-icon-btn {
   position: relative;
   width: 44px;
@@ -528,6 +861,7 @@ onUnmounted(() => {
   opacity: 1;
 }
 
+/* ==================== 信息显示样式 ==================== */
 .update-info {
   display: flex;
   align-items: center;
@@ -556,51 +890,6 @@ onUnmounted(() => {
   background: rgba(244, 67, 54, 0.2);
   color: #f44336;
   border: 1px solid #f44336;
-}
-
-.refresh-btn {
-  padding: 8px 16px;
-  background: #646cff;
-  color: white;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  font-size: 14px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.refresh-btn:hover:not(:disabled) {
-  background: #747bff;
-  transform: translateY(-1px);
-}
-
-.refresh-btn:disabled {
-  background: #666;
-  cursor: not-allowed;
-  opacity: 0.7;
-}
-
-.refresh-btn.refreshing {
-  background: #ffa500;
-}
-
-.debug-btn {
-  padding: 8px 16px;
-  background: #ff9800;
-  color: white;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  font-size: 14px;
-}
-
-.debug-btn:hover {
-  background: #f57c00;
-  transform: translateY(-1px);
 }
 
 .section-card {
@@ -664,6 +953,7 @@ onUnmounted(() => {
   margin-top: 2px;
 }
 
+/* 数据项颜色区分 */
 .data-item:nth-child(1) .value { color: #9feaf9; }
 .data-item:nth-child(2) .value { color: #fad000; }
 .data-item:nth-child(3) .value { color: #6cc24a; }
@@ -675,73 +965,15 @@ onUnmounted(() => {
 .data-item:nth-child(9) .value { color: #ff6b6b; }
 .data-item:nth-child(10) .value { color: #6bffb8; }
 
-@media (max-width: 768px) {
-  .data-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
-
-  .data-header {
-    flex-direction: column;
-    gap: 12px;
-    align-items: stretch;
-  }
-
-  .left-section {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 8px;
-  }
-
-  .header-buttons {
-    flex-direction: row;
-    justify-content: flex-end;
-    gap: 8px;
-  }
-
-  .attendance-icon-btn {
-    width: 40px;
-    height: 40px;
-  }
-
-  .skland-icon {
-    width: 24px;
-    height: 24px;
-  }
-}
-
-@media (max-width: 480px) {
-  .data-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .game-data-container {
-    padding: 10px;
-  }
-
-  .header-buttons {
-    flex-direction: column;
-    gap: 8px;
-  }
-}
-
+/* ==================== 动画定义 ==================== */
 @keyframes spin {
-  0% {
-    transform: rotate(0deg);
-  }
-  100% {
-    transform: rotate(360deg);
-  }
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
 }
 
 @keyframes pulse {
-  0% {
-    box-shadow: 0 0 0 0 rgba(255, 165, 0, 0.4);
-  }
-  70% {
-    box-shadow: 0 0 0 10px rgba(255, 165, 0, 0);
-  }
-  100% {
-    box-shadow: 0 0 0 0 rgba(255, 165, 0, 0);
-  }
+  0% { box-shadow: 0 0 0 0 rgba(255, 165, 0, 0.4); }
+  70% { box-shadow: 0 0 0 10px rgba(255, 165, 0, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(255, 165, 0, 0); }
 }
 </style>
