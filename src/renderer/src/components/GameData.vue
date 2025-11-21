@@ -317,10 +317,31 @@ onUnmounted(() => {
             <span class="label">无人机</span>
             <span class="value">{{ gameDataStore.getLaborCount.count }}</span>
             <span class="sub-value" v-if="gameDataStore.getLaborCount.remainSecs > 0">
-        {{ gameDataStore.getLaborCount.recovery }} 回满
-      </span>
+              {{ gameDataStore.getLaborCount.recovery }} 回满
+            </span>
             <span class="sub-value" v-else>已回满</span>
           </li>
+
+<!--          <li class="data-item">-->
+            <!-- 在组件模板中使用 -->
+<!--            <div v-if="gameDataStore.getLaborCount">-->
+<!--              <p>无人机: {{ gameDataStore.getLaborCount.count }}</p>-->
+<!--              <p>回满时间: {{ gameDataStore.getLaborCount.recovery }}</p>-->
+<!--              <p>恢复进度: {{ gameDataStore.getLaborRecoveryProgress }}%</p>-->
+<!--              <p>恢复速率: {{ gameDataStore.getLaborRecoveryRate }} 个/小时</p>-->
+<!--            </div>-->
+
+            <!-- 或者使用详细信息 -->
+<!--            <div v-if="gameDataStore.getLaborRecoveryDetails">-->
+<!--              <p>当前: {{ gameDataStore.getLaborRecoveryDetails.current }}</p>-->
+<!--              <p>最大: {{ gameDataStore.getLaborRecoveryDetails.max }}</p>-->
+<!--              <p>剩余时间: {{ gameDataStore.getLaborRecoveryDetails.remainSeconds }}秒</p>-->
+<!--              <p>下次恢复: {{ gameDataStore.getLaborRecoveryDetails.nextRecoveryTime }}</p>-->
+<!--              <p>状态: {{ gameDataStore.getLaborRecoveryDetails.isFull ? '已满' : '恢复中' }}</p>-->
+<!--            </div>-->
+<!--            <span class="sub-value" v-else>已回满</span>-->
+<!--          </li>-->
+
         </ul>
       </div>
 

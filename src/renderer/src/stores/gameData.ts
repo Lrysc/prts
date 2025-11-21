@@ -408,21 +408,116 @@ export const useGameDataStore = defineStore('gameData', () => {
   });
 
   /**
+   * 计算无人机信息 - 基于Kotlin代码逻辑
+   */
+  const calculateLaborInfo = (labor: any, currentTs: number) => {
+    if (!labor) {
+      return {
+        current: 0,
+        max: 0,
+        remainSecs: -1,
+        recoverTime: -1
+      };
+    }
+
+    const max = labor.maxValue || labor.max || 0;
+    const laborRemain = labor.remainSecs - (currentTs - labor.lastUpdateTime);
+
+    // 计算当前无人机数量
+    let current = 0;
+    if (labor.remainSecs === 0) {
+      current = labor.value || labor.current || 0;
+    } else {
+      current = Math.min(
+        max,
+        Math.floor(
+          ((currentTs - labor.lastUpdateTime) * (max - (labor.value || labor.current || 0)) /
+            labor.remainSecs + (labor.value || labor.current || 0))
+        )
+      );
+    }
+
+    const remainSecs = laborRemain < 0 ? 0 : laborRemain;
+    const recoverTime = labor.remainSecs + labor.lastUpdateTime;
+
+    return {
+      current,
+      max,
+      remainSecs,
+      recoverTime
+    };
+  };
+
+  /**
    * 获取无人机数量和恢复时间
    */
   const getLaborCount = computed(() => {
     const labor = playerData.value?.building?.labor;
-    const current = labor?.value || labor?.count || labor?.current || 0;
-    const max = labor?.maxValue || labor?.max || 0;
-    const remainSecs = labor?.remainSecs || 0;
+    const currentTime = getCurrentTimestamp();
 
-    const recoveryTime = formatRecoveryTimeFromSeconds(remainSecs);
+    const laborInfo = calculateLaborInfo(labor, currentTime);
+
+    const recoveryTime = formatRecoveryTimeFromSeconds(laborInfo.remainSecs);
 
     return {
-      count: `${current}/${max}`,
-      recovery: remainSecs > 0 ? recoveryTime : '已回满',
-      remainSecs: remainSecs
+      count: `${laborInfo.current}/${laborInfo.max}`,
+      recovery: laborInfo.remainSecs > 0 ? recoveryTime : '已回满',
+      remainSecs: laborInfo.remainSecs,
+      recoverTime: laborInfo.recoverTime,
+      // 添加原始数据用于调试
+      rawData: labor
     };
+  });
+
+  /**
+   * 获取无人机恢复进度百分比
+   */
+  const getLaborRecoveryProgress = computed(() => {
+    const labor = playerData.value?.building?.labor;
+    const currentTime = getCurrentTimestamp();
+
+    const laborInfo = calculateLaborInfo(labor, currentTime);
+
+    if (laborInfo.max === 0) return 0;
+    return Math.min(100, Math.floor((laborInfo.current / laborInfo.max) * 100));
+  });
+
+  /**
+   * 获取无人机恢复详细信息
+   */
+  const getLaborRecoveryDetails = computed(() => {
+    const labor = playerData.value?.building?.labor;
+    const currentTime = getCurrentTimestamp();
+
+    const laborInfo = calculateLaborInfo(labor, currentTime);
+
+    return {
+      current: laborInfo.current,
+      max: laborInfo.max,
+      remainSeconds: laborInfo.remainSecs,
+      recoveryPercentage: getLaborRecoveryProgress.value,
+      nextRecoveryTime: laborInfo.recoverTime > 0 ? formatTimestamp(laborInfo.recoverTime) : '已满',
+      isFull: laborInfo.current >= laborInfo.max,
+      isRecovering: laborInfo.remainSecs > 0 && laborInfo.current < laborInfo.max
+    };
+  });
+
+  /**
+   * 获取无人机每小时恢复数量
+   */
+  const getLaborRecoveryRate = computed(() => {
+    const labor = playerData.value?.building?.labor;
+    if (!labor) return 0;
+
+    // 根据游戏机制，无人机每小时恢复 (max - current) / (remainSecs / 3600)
+    const laborInfo = calculateLaborInfo(labor, getCurrentTimestamp());
+
+    if (laborInfo.remainSecs <= 0) return 0;
+
+    const hoursRemaining = laborInfo.remainSecs / 3600;
+    const dronesToRecover = laborInfo.max - laborInfo.current;
+
+    return hoursRemaining > 0 ? Math.floor(dronesToRecover / hoursRemaining) : 0;
   });
 
   /**
@@ -675,7 +770,7 @@ export const useGameDataStore = defineStore('gameData', () => {
     dataCache.value = undefined;
   };
 
-  // ========== 导出接口 ==========
+// ========== 导出接口 ==========
   return {
     // 状态
     isLoading,
@@ -697,6 +792,9 @@ export const useGameDataStore = defineStore('gameData', () => {
     getManufactureStatus,
     getTradingOrderCount,
     getLaborCount,
+    getLaborRecoveryProgress,        // 新增
+    getLaborRecoveryDetails,         // 新增
+    getLaborRecoveryRate,            // 新增
     getDormRestCount,
     getTrainingStatus,
     getAssistCharCount,
