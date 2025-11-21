@@ -209,18 +209,241 @@ const lastLogTime = computed(() => {
   return new Date(lastTimestamp).toLocaleString('zh-CN')
 })
 
-// ==================== 功能方法 ====================
+// ==================== 修复的复制功能 ====================
 
 /**
- * 处理UID复制
+ * 高可靠性的复制到剪贴板函数
+ * 结合多种方法确保复制成功
  */
-const handleCopyUid = async () => {
-  await copyToClipboard(gameDataStore.gameUid, 'UID')
+const copyToClipboard = async (text: string, itemName: string = '内容'): Promise<boolean> => {
+  if (!text || text.trim() === '') {
+    console.warn('复制内容为空')
+    return false
+  }
+
+  // 方法1: 使用现代 Clipboard API（首选）
+  if (navigator.clipboard && window.isSecureContext) {
+    try {
+      await navigator.clipboard.writeText(text)
+      console.log(`✅ 使用Clipboard API复制${itemName}成功`)
+      return true
+    } catch (error) {
+      console.warn(`Clipboard API失败:`, error)
+      // 继续尝试其他方法
+    }
+  }
+
+  // 方法2: 使用textarea元素和execCommand（兼容方案）
+  try {
+    const textArea = document.createElement('textarea')
+    textArea.value = text
+
+    // 确保元素在视口外但可聚焦
+    textArea.style.position = 'fixed'
+    textArea.style.top = '0'
+    textArea.style.left = '0'
+    textArea.style.width = '2em'
+    textArea.style.height = '2em'
+    textArea.style.padding = '0'
+    textArea.style.border = 'none'
+    textArea.style.outline = 'none'
+    textArea.style.boxShadow = 'none'
+    textArea.style.background = 'transparent'
+    textArea.style.opacity = '0'
+    textArea.style.zIndex = '-1'
+
+    document.body.appendChild(textArea)
+
+    // 选择文本 - 使用更兼容的方式
+    textArea.focus()
+    textArea.select()
+
+    // 尝试使用setSelectionRange作为备选
+    try {
+      textArea.setSelectionRange(0, textArea.value.length)
+    } catch (e) {
+      console.warn('setSelectionRange失败:', e)
+    }
+
+    // 执行复制命令
+    const successful = document.execCommand('copy')
+    document.body.removeChild(textArea)
+
+    if (successful) {
+      console.log(`✅ 使用execCommand复制${itemName}成功`)
+      return true
+    } else {
+      console.warn(`❌ 使用execCommand复制${itemName}失败`)
+      return false
+    }
+  } catch (error) {
+    console.error(`execCommand复制失败:`, error)
+    // 继续尝试最后的方法
+  }
+
+  // 方法3: 使用contenteditable div作为最后手段
+  try {
+    const div = document.createElement('div')
+    div.contentEditable = 'true'
+    div.textContent = text
+    div.style.position = 'fixed'
+    div.style.top = '0'
+    div.style.left = '0'
+    div.style.opacity = '0'
+    div.style.zIndex = '-1'
+
+    document.body.appendChild(div)
+
+    // 选择div内容
+    const range = document.createRange()
+    range.selectNodeContents(div)
+    const selection = window.getSelection()
+    if (selection) {
+      selection.removeAllRanges()
+      selection.addRange(range)
+    }
+
+    // 尝试复制
+    const successful = document.execCommand('copy')
+    if (selection) {
+      selection.removeAllRanges()
+    }
+    document.body.removeChild(div)
+
+    if (successful) {
+      console.log(`✅ 使用contenteditable复制${itemName}成功`)
+      return true
+    }
+  } catch (error) {
+    console.error(`contenteditable复制失败:`, error)
+  }
+
+  console.error(`❌ 所有复制方法都失败了`)
+  return false
 }
 
-const copyNickname = () => {
-  gameDataStore.copyNickname(authStore.userName);
-};
+/**
+ * 强制复制功能 - 确保用户总能复制到内容
+ */
+const forceCopyToClipboard = async (text: string, itemName: string = '内容'): Promise<boolean> => {
+  // 首先尝试常规复制
+  const success = await copyToClipboard(text, itemName)
+
+  if (success) {
+    return true
+  }
+
+  // 如果常规复制失败，提供手动复制选项
+  console.log(`常规复制失败，提供手动复制选项`)
+
+  // 对于短文本，直接显示在提示中让用户手动复制
+  if (text.length < 100) {
+    showWarning(`请手动复制${itemName}: ${text}`)
+    return false
+  }
+
+  // 对于长文本，显示模态框让用户手动复制
+  manualCopyContent.value = text
+  showManualCopyModal.value = true
+  await nextTick()
+
+  // 自动选择文本
+  if (manualCopyTextarea.value) {
+    manualCopyTextarea.value.select()
+    manualCopyTextarea.value.focus()
+  }
+
+  return false
+}
+
+/**
+ * 处理UID复制 - 使用强制复制
+ */
+const handleCopyUid = async () => {
+  const uid = gameDataStore.gameUid
+  if (!uid || uid === '未获取') {
+    showError('UID不可用，无法复制')
+    return
+  }
+
+  try {
+    const success = await forceCopyToClipboard(uid, 'UID')
+    if (success) {
+      showSuccess(`已复制 UID: ${uid}`)
+      logger.info('用户复制了UID', { uid })
+    } else {
+      // 已经在forceCopyToClipboard中处理了手动复制的情况
+      logger.info('UID复制需要手动操作', { uid })
+    }
+  } catch (error) {
+    console.error('复制UID过程中发生异常:', error)
+    showError(`复制失败，请手动复制UID: ${uid}`)
+    logger.error('复制UID过程中发生异常', error)
+  }
+}
+
+/**
+ * 复制昵称 - 使用强制复制
+ */
+const copyNickname = async () => {
+  const nickname = authStore.userName
+  if (!nickname || nickname === '未获取' || nickname === '未知用户') {
+    showError('昵称不可用，无法复制')
+    return
+  }
+
+  try {
+    const success = await forceCopyToClipboard(nickname, '昵称')
+    if (success) {
+      showSuccess(`已复制昵称: ${nickname}`)
+      logger.info('用户复制了昵称', { nickname })
+    } else {
+      logger.info('昵称复制需要手动操作', { nickname })
+    }
+  } catch (error) {
+    console.error('复制昵称过程中发生异常:', error)
+    showError(`复制失败，请手动复制昵称: ${nickname}`)
+    logger.error('复制昵称过程中发生异常', error)
+  }
+}
+
+/**
+ * 复制日志到剪贴板 - 使用强制复制
+ */
+const copyLogsToClipboard = async () => {
+  try {
+    const logText = logger.exportLogs()
+
+    if (!logText || logText.trim() === '') {
+      showError('没有可复制的日志内容')
+      return
+    }
+
+    // 检查日志内容是否过长
+    if (logText.length > 100000) { // 100KB限制
+      if (!confirm('日志内容较大，复制可能需要较长时间，是否继续？')) {
+        return
+      }
+    }
+
+    const success = await forceCopyToClipboard(logText, '日志')
+
+    if (success) {
+      showSuccess('日志已复制到剪贴板')
+      logger.info('用户复制了日志到剪贴板', { logCount: logCount.value })
+    } else {
+      // 已经在forceCopyToClipboard中显示了手动复制模态框
+      logger.info('日志复制需要手动操作', { logCount: logCount.value })
+    }
+
+  } catch (error) {
+    console.error('复制日志失败:', error)
+    showError('复制日志失败，请尝试导出日志文件')
+    logger.error('复制日志到剪贴板失败', error)
+  }
+}
+
+// ==================== 其他现有方法 ====================
 
 /**
  * 加载日志数据
@@ -231,7 +454,6 @@ const loadLogs = () => {
 
 /**
  * 导出日志为文本文件
- * 生成包含时间戳的日志文件，便于用户反馈问题
  */
 const exportLogs = () => {
   try {
@@ -239,8 +461,6 @@ const exportLogs = () => {
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
     downloadFile(logText, `PRTS-System-logs-${timestamp}.txt`, 'text/plain')
     showSuccess('日志导出成功')
-
-    // 记录导出操作
     logger.info('用户导出了日志文件', { logCount: logCount.value })
   } catch (error) {
     console.error('导出日志失败:', error)
@@ -251,7 +471,6 @@ const exportLogs = () => {
 
 /**
  * 导出日志为JSON格式
- * 提供结构化的数据格式，便于程序分析
  */
 const exportLogsAsJson = () => {
   try {
@@ -259,68 +478,11 @@ const exportLogsAsJson = () => {
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
     downloadFile(jsonData, `PRTS-System-logs-${timestamp}.json`, 'application/json')
     showSuccess('JSON日志导出成功')
-
-    // 记录导出操作
     logger.info('用户导出了JSON格式日志', { logCount: logCount.value })
   } catch (error) {
     console.error('导出JSON日志失败:', error)
     showError('导出JSON日志失败')
     logger.error('导出JSON日志文件失败', error)
-  }
-}
-
-/**
- * 通用的复制到剪贴板函数
- */
-const copyToClipboard = async (text: string, itemName: string = '内容'): Promise<boolean> => {
-  try {
-    // 方法1: 使用现代 Clipboard API
-    if (navigator.clipboard && window.isSecureContext) {
-      await navigator.clipboard.writeText(text)
-      showSuccess(`${itemName}已复制到剪贴板`)
-      return true
-    } else {
-      // 在不安全的上下文中，提示用户手动复制
-      showWarning(`请手动复制${itemName}: ${text}`)
-      return false
-    }
-  } catch (error) {
-    console.error(`复制${itemName}失败:`, error)
-    showWarning(`复制失败，请手动复制${itemName}`)
-    return false
-  }
-}
-
-/**
- * 复制日志到剪贴板 - 使用现代 Clipboard API
- */
-const copyLogsToClipboard = async () => {
-  try {
-    const logText = logger.exportLogs()
-
-    // 检查日志内容是否过长
-    if (logText.length > 100000) { // 100KB限制
-      if (!confirm('日志内容较大，复制可能需要较长时间，是否继续？')) {
-        return
-      }
-    }
-
-    const success = await copyToClipboard(logText, '日志')
-
-    if (success) {
-      logger.info('用户复制了日志到剪贴板', { logCount: logCount.value })
-    } else {
-      // 如果自动复制失败，显示手动复制模态框
-      manualCopyContent.value = logText
-      showManualCopyModal.value = true
-      await nextTick()
-      selectAllText()
-    }
-
-  } catch (error) {
-    console.error('复制日志失败:', error)
-    showError('复制日志失败，请尝试导出日志文件')
-    logger.error('复制日志到剪贴板失败', error)
   }
 }
 
@@ -350,7 +512,6 @@ const showClearConfirm = () => {
   isOpening.value = true
   isClosing.value = false
 
-  // 动画完成后重置状态
   setTimeout(() => {
     isOpening.value = false
   }, 600)
@@ -360,7 +521,6 @@ const showClearConfirm = () => {
  * 确认清除日志
  */
 const confirmClear = () => {
-  // 开始关闭动画
   isClosing.value = true
   isOpening.value = false
 
@@ -371,8 +531,6 @@ const confirmClear = () => {
     showClearConfirmModal.value = false
     isClosing.value = false
     showSuccess('日志已清除')
-
-    // 记录清除操作
     logger.info('用户清除了所有日志', { clearedCount })
   }, 500)
 }
@@ -381,7 +539,6 @@ const confirmClear = () => {
  * 取消清除日志
  */
 const cancelClear = () => {
-  // 开始关闭动画
   isClosing.value = true
   isOpening.value = false
 
@@ -393,9 +550,6 @@ const cancelClear = () => {
 
 /**
  * 下载文件工具函数
- * @param content - 文件内容
- * @param filename - 文件名
- * @param mimeType - MIME类型
  */
 const downloadFile = (content: string, filename: string, mimeType: string) => {
   try {
@@ -410,7 +564,6 @@ const downloadFile = (content: string, filename: string, mimeType: string) => {
     link.click()
     document.body.removeChild(link)
 
-    // 清理URL对象
     URL.revokeObjectURL(url)
   } catch (error) {
     console.error('文件下载失败:', error)
@@ -439,19 +592,15 @@ watch(
   (newVal) => {
     if (newVal) {
       gameDataStore.fetchUserAvatar()
-      // 登录时记录日志
       logger.info('用户登录系统', {
         userName: authStore.userName,
         gameUid: gameDataStore.gameUid
       })
     } else {
-      // 登出时重置头像状态
       gameDataStore.userAvatar = ''
       gameDataStore.avatarLoadError = true
-      // 登出时记录日志
       logger.info('用户退出登录')
     }
-    // 更新日志显示
     loadLogs()
   }
 )
@@ -460,15 +609,11 @@ watch(
  * 组件挂载时初始化
  */
 onMounted(() => {
-  // 获取用户头像
   if (authStore.isLogin) {
     gameDataStore.fetchUserAvatar()
   }
 
-  // 加载日志数据
   loadLogs()
-
-  // 记录页面访问
   logger.info('用户访问设置页面')
 })
 </script>
@@ -565,16 +710,6 @@ onMounted(() => {
   transition: all 0.2s ease;
   border: 1px solid transparent;
   user-select: none;
-}
-
-.uid-value.copyable:hover {
-  background: rgba(159, 234, 249, 0.1);
-  border-color: #1b74c8;
-}
-
-.uid-value.copyable:active {
-  background: rgba(159, 234, 249, 0.2);
-  transform: scale(0.98);
 }
 
 .status-online {
@@ -757,38 +892,45 @@ onMounted(() => {
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.7);
+  background: rgba(0, 0, 0, 0.8);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 10000;
   animation: fadeIn 0.3s ease;
+  padding: 20px;
+  box-sizing: border-box;
 }
 
 .modal-content {
   background: #2d2d2d;
   border-radius: 12px;
   border: 1px solid #404040;
-  width: 90%;
-  max-width: 600px;
-  max-height: 80vh;
+  width: 100%;
+  max-width: min(800px, 90vw);
+  max-height: min(700px, 80vh);
   display: flex;
   flex-direction: column;
   animation: slideIn 0.3s ease;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
 }
 
 .modal-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 20px;
+  padding: 10px 24px;
   border-bottom: 1px solid #404040;
+  background: #333333;
+  flex-shrink: 0;
 }
 
 .modal-header h3 {
   color: #9feaf9;
   margin: 0;
   font-size: 18px;
+  font-weight: 600;
 }
 
 .modal-close {
@@ -798,26 +940,30 @@ onMounted(() => {
   font-size: 24px;
   cursor: pointer;
   padding: 0;
-  width: 30px;
-  height: 30px;
+  width: 32px;
+  height: 32px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 4px;
+  border-radius: 6px;
   transition: all 0.2s ease;
+  flex-shrink: 0;
 }
 
 .modal-close:hover {
   background: rgba(255, 255, 255, 0.1);
   color: white;
+  transform: scale(1.1);
 }
 
 .modal-body {
-  padding: 20px;
+  padding: 16px;
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 15px;
+  gap: 20px;
+  min-height: 0; /* 重要：允许内容收缩 */
+  overflow: hidden;
 }
 
 .modal-tip {
@@ -825,21 +971,26 @@ onMounted(() => {
   margin: 0;
   font-size: 14px;
   text-align: center;
+  line-height: 1.5;
+  flex-shrink: 0;
 }
 
 .manual-copy-textarea {
   flex: 1;
-  min-height: 300px;
+  min-height: 200px;
+  max-height: 400px;
   background: #1a1a1a;
   border: 1px solid #404040;
-  border-radius: 6px;
+  border-radius: 8px;
   color: #e0e0e0;
-  padding: 12px;
+  padding: 16px;
   font-family: 'Courier New', monospace;
-  font-size: 12px;
-  line-height: 1.4;
-  resize: vertical;
+  font-size: 13px;
+  line-height: 1.5;
+  resize: none; /* 禁用手动调整大小 */
   outline: none;
+  overflow: auto;
+  box-sizing: border-box;
 }
 
 .manual-copy-textarea:focus {
@@ -849,18 +1000,22 @@ onMounted(() => {
 
 .modal-actions {
   display: flex;
-  gap: 10px;
+  gap: 12px;
   justify-content: flex-end;
+  flex-shrink: 0;
+  padding-top: 8px;
+  border-top: 1px solid #404040;
 }
 
 .modal-btn {
-  padding: 8px 16px;
+  padding: 10px 20px;
   border: none;
   border-radius: 6px;
   cursor: pointer;
   font-size: 14px;
   font-weight: 500;
   transition: all 0.2s ease;
+  min-width: 100px;
 }
 
 .select-btn {
@@ -870,7 +1025,7 @@ onMounted(() => {
 
 .select-btn:hover {
   transform: translateY(-1px);
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 4px 12px rgba(23, 162, 184, 0.4);
 }
 
 .close-btn {
@@ -881,6 +1036,142 @@ onMounted(() => {
 .close-btn:hover {
   background: #5a6268;
   transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(108, 117, 125, 0.4);
+}
+
+/* 关键帧动画 */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-30px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+  .modal-overlay {
+    padding: 15px;
+  }
+
+  .modal-content {
+    max-width: 95vw;
+    max-height: 85vh;
+  }
+
+  .modal-header {
+    padding: 16px 20px;
+  }
+
+  .modal-header h3 {
+    font-size: 16px;
+  }
+
+  .modal-body {
+    padding: 20px;
+    gap: 16px;
+  }
+
+  .modal-tip {
+    font-size: 13px;
+  }
+
+  .manual-copy-textarea {
+    font-size: 12px;
+    padding: 12px;
+    max-height: 300px;
+  }
+
+  .modal-actions {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .modal-btn {
+    width: 100%;
+    min-width: auto;
+  }
+}
+
+@media (max-width: 480px) {
+  .modal-overlay {
+    padding: 10px;
+  }
+
+  .modal-content {
+    max-width: 98vw;
+    max-height: 90vh;
+    border-radius: 10px;
+  }
+
+  .modal-header {
+    padding: 14px 16px;
+  }
+
+  .modal-header h3 {
+    font-size: 15px;
+  }
+
+  .modal-body {
+    padding: 16px;
+    gap: 12px;
+  }
+
+  .modal-tip {
+    font-size: 12px;
+  }
+
+  .manual-copy-textarea {
+    font-size: 11px;
+    padding: 10px;
+    max-height: 250px;
+  }
+
+  .modal-close {
+    width: 28px;
+    height: 28px;
+    font-size: 20px;
+  }
+}
+
+/* 小屏幕高度适配 */
+@media (max-height: 600px) {
+  .modal-overlay {
+    align-items: flex-start;
+    padding-top: 40px;
+  }
+
+  .modal-content {
+    max-height: calc(100vh - 80px);
+  }
+
+  .manual-copy-textarea {
+    max-height: 200px;
+  }
+}
+
+/* 超小屏幕适配 */
+@media (max-width: 320px) {
+  .modal-header {
+    padding: 12px 14px;
+  }
+
+  .modal-body {
+    padding: 14px;
+  }
+
+  .modal-btn {
+    padding: 8px 16px;
+    font-size: 13px;
+  }
 }
 
 /* 自定义清除日志确认弹窗 */
