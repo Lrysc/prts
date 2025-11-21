@@ -4,6 +4,7 @@ import Recruit from '@components/Recruit.vue'
 import Material from '@components/Material.vue'
 import LoginWindow from '@components/LoginWindow.vue'
 import Setting from '@components/Setting.vue'
+import ToastNotification from '@components/ToastNotification.vue' // 导入浮窗组件
 import { useAuthStore } from '@stores/auth'
 import { ref } from 'vue'
 
@@ -146,6 +147,9 @@ const componentMap: Record<string, any> = {
       @close="closeLogin"
       @loginSuccess="handleLoginSuccess"
     />
+
+    <!-- 全局浮窗通知组件 -->
+    <ToastNotification />
   </div>
 </template>
 

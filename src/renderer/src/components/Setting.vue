@@ -9,21 +9,30 @@
         <div class="user-card">
           <div class="user-avatar">
             <img
-              v-if="userAvatar && !avatarLoadError"
-              :src="userAvatar"
+              v-if="gameDataStore.userAvatar && !gameDataStore.avatarLoadError"
+              :src="gameDataStore.userAvatar"
               alt="用户头像"
               class="avatar-img"
-              @error="handleAvatarError"
-              @load="handleAvatarLoad"
+              @error="gameDataStore.handleAvatarError"
+              @load="gameDataStore.handleAvatarLoad"
             />
             <div v-else class="avatar-placeholder">
-              {{ getAvatarPlaceholder() }}
+              {{ gameDataStore.getAvatarPlaceholder() }}
             </div>
           </div>
           <div class="user-details">
             <p class="user-name">{{ authStore.userName }}</p>
-            <p class="user-level">等级: {{ userLevel }}</p>
-            <p class="user-uid">游戏ID: {{ gameUid }}</p>
+            <p class="user-level">Lv: {{ gameDataStore.userLevel }}</p>
+            <p class="user-uid">
+              UID:
+              <span
+                class="uid-value copyable"
+                @click="handleCopyUid"
+                :title="`点击复制 UID: ${gameDataStore.gameUid}`"
+              >
+                {{ gameDataStore.gameUid }}
+              </span>
+            </p>
             <p class="login-status">状态: <span class="status-online">已登录</span></p>
           </div>
         </div>
@@ -45,116 +54,30 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, onMounted, watch } from 'vue'
+import { onMounted, watch } from 'vue'
 import { useAuthStore } from '@stores/auth'
+import { useGameDataStore } from '@stores/gameData'
 
+// ==================== Store实例 ====================
 const authStore = useAuthStore()
-const userAvatar = ref<string>('')
-const avatarLoadError = ref<boolean>(false)
+const gameDataStore = useGameDataStore()
+
+// ==================== 功能方法 ====================
 
 /**
- * 获取游戏内UID
+ * 处理UID复制
  */
-const gameUid = computed(() => {
-  if (!authStore.isLogin || !authStore.bindingRoles.length) {
-    return '未获取'
-  }
-
-  // 获取默认角色或第一个角色的UID
-  const defaultRole = authStore.bindingRoles.find(role => role.isDefault) || authStore.bindingRoles[0]
-  return defaultRole?.uid || '未获取'
-})
-
-/**
- * 获取用户等级
- */
-const userLevel = computed(() => {
-  if (!authStore.isLogin || !authStore.playerData?.status) {
-    return '未获取'
-  }
-  return authStore.playerData.status.level || '未获取'
-})
-
-/**
- * 处理CDN图片URL
- */
-const processImageUrl = (url: string): string => {
-  if (!url) return ''
-
-  // 如果已经是完整URL，直接返回
-  if (url.startsWith('http')) {
-    return url
-  }
-
-  // 如果是相对路径，添加CDN域名
-  // 这里需要根据你的实际CDN域名进行调整
-  if (url.startsWith('/')) {
-    return `https://web.hycdn.cn${url}`
-  }
-
-  return url
+const handleCopyUid = () => {
+  gameDataStore.copyUid(gameDataStore.gameUid)
 }
 
-/**
- * 获取头像占位符
- */
-const getAvatarPlaceholder = (): string => {
-  if (!authStore.userName) return '👤'
-
-  // 从用户名中提取第一个字符作为占位符
-  const firstChar = authStore.userName.charAt(0)
-  return firstChar || '👤'
-}
-
-/**
- * 处理头像加载错误
- */
-const handleAvatarError = () => {
-  console.warn('头像加载失败，使用默认占位符')
-  avatarLoadError.value = true
-}
-
-/**
- * 处理头像加载成功
- */
-const handleAvatarLoad = () => {
-  avatarLoadError.value = false
-}
-
-/**
- * 获取用户头像
- */
-const fetchUserAvatar = () => {
-  if (!authStore.isLogin || !authStore.playerData?.status?.avatar) {
-    userAvatar.value = ''
-    avatarLoadError.value = true
-    return
-  }
-
-  try {
-    // 直接从 playerData 中获取头像信息
-    const avatarData = authStore.playerData.status.avatar
-    if (avatarData && avatarData.url) {
-      // 处理CDN URL
-      userAvatar.value = processImageUrl(avatarData.url)
-      avatarLoadError.value = false
-      console.log('头像URL:', userAvatar.value) // 调试用
-    } else {
-      userAvatar.value = ''
-      avatarLoadError.value = true
-    }
-  } catch (error) {
-    console.error('获取用户头像失败:', error)
-    userAvatar.value = ''
-    avatarLoadError.value = true
-  }
-}
+// ==================== 生命周期和监听器 ====================
 
 // 监听 playerData 变化，更新头像
 watch(
-  () => authStore.playerData,
+  () => gameDataStore.playerData,
   () => {
-    fetchUserAvatar()
+    gameDataStore.fetchUserAvatar()
   },
   { deep: true, immediate: true }
 )
@@ -164,10 +87,11 @@ watch(
   () => authStore.isLogin,
   (newVal) => {
     if (newVal) {
-      fetchUserAvatar()
+      gameDataStore.fetchUserAvatar()
     } else {
-      userAvatar.value = ''
-      avatarLoadError.value = true
+      // 登出时重置头像状态
+      gameDataStore.userAvatar = ''
+      gameDataStore.avatarLoadError = true
     }
   }
 )
@@ -175,7 +99,7 @@ watch(
 // 组件挂载时获取头像
 onMounted(() => {
   if (authStore.isLogin) {
-    fetchUserAvatar()
+    gameDataStore.fetchUserAvatar()
   }
 })
 </script>
@@ -185,6 +109,7 @@ onMounted(() => {
   color: white;
   max-width: 100%;
   padding: 20px;
+  position: relative;
 }
 
 .setting-container h2 {
@@ -267,6 +192,27 @@ onMounted(() => {
   color: #ccc;
   font-size: 12px;
   margin-bottom: 2px;
+}
+
+/* UID复制样式 */
+.uid-value.copyable {
+  color: #9feaf9;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+  border: 1px solid transparent;
+  user-select: none;
+}
+
+.uid-value.copyable:hover {
+  background: rgba(159, 234, 249, 0.1);
+  border-color: #9feaf9;
+}
+
+.uid-value.copyable:active {
+  background: rgba(159, 234, 249, 0.2);
+  transform: scale(0.98);
 }
 
 .status-online {

@@ -3,6 +3,12 @@ import { ref, onMounted, onUnmounted, watch } from 'vue';
 import { useAuthStore } from '@stores/auth';
 import { useGameDataStore } from '@stores/gameData';
 import { AuthAPI } from '@services/api';
+import {
+  showSuccess,
+  showError,
+  showWarning,
+  showInfo
+} from '@services/toastService';
 
 // ==================== Store实例 ====================
 const authStore = useAuthStore();
@@ -12,67 +18,10 @@ const gameDataStore = useGameDataStore();
 
 // 签到相关状态
 const isAttending = ref(false);
-const attendanceMsg = ref('');
 
 // 右键菜单相关状态
 const contextMenuVisible = ref(false);
 const contextMenuPosition = ref({ x: 0, y: 0 });
-
-// 浮窗提示相关状态
-const toastVisible = ref(false);
-const toastMessage = ref('');
-const toastType = ref<'success' | 'error'>('success');
-const toastLeaving = ref(false); // 控制退出动画状态
-
-// ==================== 浮窗提示功能 ====================
-
-/**
- * 显示浮窗提示
- * @param message 提示消息内容
- * @param type 提示类型：success成功 / error错误
- */
-const showToast = (message: string, type: 'success' | 'error' = 'success') => {
-  // 如果已经有浮窗在显示，先隐藏它再显示新的
-  if (toastVisible.value) {
-    hideToast();
-    setTimeout(() => {
-      showNewToast(message, type);
-    }, 300);
-  } else {
-    showNewToast(message, type);
-  }
-};
-
-/**
- * 显示新浮窗的内部方法
- */
-const showNewToast = (message: string, type: 'success' | 'error') => {
-  toastMessage.value = message;
-  toastType.value = type;
-  toastLeaving.value = false; // 重置退出状态
-  toastVisible.value = true;
-
-  // 3秒后自动隐藏
-  setTimeout(() => {
-    hideToast();
-  }, 3000);
-};
-
-/**
- * 隐藏浮窗（带退出动画效果）
- */
-const hideToast = () => {
-  if (!toastVisible.value) return;
-
-  // 先设置退出状态，触发退出动画
-  toastLeaving.value = true;
-
-  // 等待动画完成后再隐藏元素
-  setTimeout(() => {
-    toastVisible.value = false;
-    toastLeaving.value = false; // 重置状态
-  }, 300);
-};
 
 // ==================== 右键菜单功能 ====================
 
@@ -135,12 +84,12 @@ const handleRefresh = async () => {
 
   try {
     await gameDataStore.refreshData();
-    showToast('数据刷新成功！', 'success');
+    showSuccess('数据刷新成功！');
   } catch (error: any) {
     // 安全的错误处理，避免未处理的Promise拒绝
     const errorMessage = error?.message || '未知错误';
     console.error('刷新数据失败:', error);
-    showToast(`刷新失败：${errorMessage}`, 'error');
+    showError(`刷新失败：${errorMessage}`);
   }
 };
 
@@ -150,12 +99,11 @@ const handleRefresh = async () => {
 const handleAttendance = async () => {
   // 检查登录状态和绑定角色
   if (!authStore.isLogin || !authStore.bindingRoles?.length) {
-    gameDataStore.errorMsg = '请先登录并绑定游戏角色';
+    showWarning('请先登录并绑定游戏角色');
     return;
   }
 
   isAttending.value = true;
-  attendanceMsg.value = '';
 
   try {
     // 验证cred有效性
@@ -193,8 +141,7 @@ const handleAttendance = async () => {
 
     // 处理签到结果
     if (attendanceData.alreadyAttended) {
-      attendanceMsg.value = '今日已签到';
-      showToast('今日已签到', 'success');
+      showInfo('今日已签到');
     } else {
       // 解析签到奖励信息
       const awards = attendanceData.awards || [];
@@ -204,21 +151,14 @@ const handleAttendance = async () => {
         return `${name} x${count}`;
       }).join(', ');
 
-      attendanceMsg.value = `签到成功！获得：${awardTexts}`;
-      showToast(`签到成功！获得：${awardTexts}`, 'success');
+      showSuccess(`签到成功！获得：${awardTexts}`);
     }
-
-    // 3秒后清除签到消息
-    setTimeout(() => {
-      attendanceMsg.value = '';
-    }, 3000);
 
   } catch (error: any) {
     // 安全的错误处理
     const errorMsg = error?.message || '签到失败，请稍后重试';
     console.error('签到失败:', error);
-    attendanceMsg.value = errorMsg;
-    showToast(errorMsg, 'error');
+    showError(errorMsg);
   } finally {
     isAttending.value = false;
   }
@@ -259,14 +199,14 @@ onMounted(async () => {
       } else {
         console.log('登录状态恢复失败');
         gameDataStore.isLoading = false;
-        gameDataStore.errorMsg = '请先登录森空岛账号';
+        showWarning('请先登录森空岛账号');
       }
     }
   } catch (error) {
     // 安全的错误处理
     console.error('GameData组件初始化失败:', error);
     gameDataStore.isLoading = false;
-    gameDataStore.errorMsg = '初始化失败，请刷新页面重试';
+    showError('初始化失败，请刷新页面重试');
   }
 });
 
@@ -281,6 +221,7 @@ watch(() => authStore.isLogin, async (newLoginState, oldLoginState) => {
       await gameDataStore.fetchGameData();
     } catch (error) {
       console.error('重新加载数据失败:', error);
+      showError('重新加载数据失败');
     }
   }
 });
@@ -320,18 +261,6 @@ onUnmounted(() => {
       </button>
     </div>
 
-    <!-- ==================== 浮窗提示组件 ==================== -->
-    <div
-      v-if="toastVisible"
-      class="toast-notification"
-      :class="[toastType, { leaving: toastLeaving }]"
-    >
-      <div class="toast-content">
-        <p class="toast-message">{{ toastMessage }}</p>
-      </div>
-      <button class="toast-close" @click="hideToast">×</button>
-    </div>
-
     <!-- ==================== 主内容区域 ==================== -->
 
     <!-- 加载状态提示 -->
@@ -357,10 +286,7 @@ onUnmounted(() => {
               最后更新：{{ gameDataStore.formatTimestamp(Math.floor(gameDataStore.lastUpdateTime / 1000)) }}
             </span>
           </div>
-          <!-- 签到消息提示 -->
-          <div class="attendance-message" v-if="attendanceMsg" :class="{ success: !attendanceMsg.includes('失败'), error: attendanceMsg.includes('失败') }">
-            {{ attendanceMsg }}
-          </div>
+          <!-- 移除原有的签到消息提示区域 -->
         </div>
         <div class="header-buttons">
           <!-- 森空岛签到图标按钮 -->
@@ -443,10 +369,6 @@ onUnmounted(() => {
           <li class="data-item">
             <span class="label">训练室</span>
             <span class="value">{{ gameDataStore.getTrainingStatus }}</span>
-          </li>
-          <li class="data-item">
-            <span class="label">每周报酬合成玉</span>
-            <span class="value">{{ gameDataStore.getCampaignReward }}</span>
           </li>
           <li class="data-item">
             <span class="label">每日任务</span>
@@ -605,98 +527,6 @@ onUnmounted(() => {
   to {
     opacity: 1;
     transform: scale(1) translateY(0);
-  }
-}
-
-/* ==================== 浮窗提示样式 ==================== */
-.toast-notification {
-  position: fixed;
-  top: 20px;
-  right: 20px;
-  background: #2d2d2d;
-  border: 1px solid #404040;
-  border-radius: 8px;
-  padding: 16px 20px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
-  z-index: 10001;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  min-width: 300px;
-  max-width: 450px;
-  animation: toastSlideIn 0.3s ease-out forwards; /* 进入动画 */
-  backdrop-filter: blur(10px);
-}
-
-/* 浮窗退出状态 */
-.toast-notification.leaving {
-  animation: toastSlideOut 0.3s ease-in forwards; /* 退出动画 */
-}
-
-/* 成功状态样式 */
-.toast-notification.success {
-  border-left: 4px solid #4caf50;
-  background: linear-gradient(90deg, rgba(76, 175, 80, 0.1) 0%, #2d2d2d 100%);
-}
-
-/* 错误状态样式 */
-.toast-notification.error {
-  border-left: 4px solid #f44336;
-  background: linear-gradient(90deg, rgba(244, 67, 54, 0.1) 0%, #2d2d2d 100%);
-}
-
-.toast-content {
-  flex: 1;
-}
-
-.toast-message {
-  margin: 0;
-  color: #fff;
-  font-size: 14px;
-  line-height: 1.4;
-  font-weight: 500;
-}
-
-.toast-close {
-  background: none;
-  border: none;
-  color: #999;
-  font-size: 20px;
-  cursor: pointer;
-  padding: 4px 8px;
-  border-radius: 4px;
-  transition: all 0.2s ease;
-  flex-shrink: 0;
-  line-height: 1;
-}
-
-.toast-close:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: #fff;
-}
-
-/* 浮窗进入动画 - 从右侧水平滑入 */
-@keyframes toastSlideIn {
-  from {
-    opacity: 0;
-    transform: translateX(100%);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
-}
-
-/* 浮窗退出动画 - 水平向右滑出 */
-@keyframes toastSlideOut {
-  from {
-    opacity: 1;
-    transform: translateX(0);
-  }
-  to {
-    opacity: 0;
-    transform: translateX(100%);
   }
 }
 
@@ -873,25 +703,7 @@ onUnmounted(() => {
   font-size: 14px;
 }
 
-.attendance-message {
-  padding: 6px 12px;
-  border-radius: 4px;
-  font-size: 14px;
-  font-weight: 500;
-}
-
-.attendance-message.success {
-  background: rgba(76, 175, 80, 0.2);
-  color: #4caf50;
-  border: 1px solid #4caf50;
-}
-
-.attendance-message.error {
-  background: rgba(244, 67, 54, 0.2);
-  color: #f44336;
-  border: 1px solid #f44336;
-}
-
+/* 移除原有的签到消息样式 */
 .section-card {
   background: #2d2d2d;
   border-radius: 8px;
