@@ -225,7 +225,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="login-modal-overlay" @click.self="handleClose">
+  <div class="login-modal-overlay">
     <div class="login-window">
       <!-- 窗口标题栏 -->
       <div class="window-header">
