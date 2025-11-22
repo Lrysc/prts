@@ -58,11 +58,47 @@
               <span class="label">雇佣干员数</span>
               <span class="value">{{ gameDataStore.getCharCount || '--' }}</span>
             </li>
-              <li class="data-item">
-                <span class="label">时装数量</span>
-                <span class="value">{{ gameDataStore.playerData?.skins?.length || '--' }}</span>
-              </li>
+            <li class="data-item">
+              <span class="label">时装数量</span>
+              <span class="value">{{ gameDataStore.playerData?.skins?.length || '--' }}</span>
+            </li>
           </ul>
+        </div>
+
+        <!-- 助战干员板块 - 从gamedata迁移过来 -->
+        <div class="assist-chars-section" v-if="authStore.isLogin">
+          <h3>助战干员</h3>
+          <div class="assist-chars-card">
+            <div class="assist-chars-grid">
+              <div
+                v-for="(char, index) in gameDataStore.getAssistCharArrayStatus"
+                :key="index"
+                class="assist-char-item"
+              >
+                <!-- 左边：头像 -->
+                <div class="char-avatar-container">
+                  <img
+                    :src="char.avatarUrl"
+                    :alt="char.name"
+                    class="char-avatar"
+                    @error="(event) => gameDataStore.handleOperatorAvatarError(char.charId, event)"
+                    @load="() => gameDataStore.handleOperatorAvatarLoad(char.charId)"
+                  />
+                </div>
+
+                <!-- 右边：干员信息 -->
+                <div class="char-info-container">
+                  <div class="char-name">{{ char.name }}</div>
+                  <div class="char-level">{{ char.level }}</div>
+                  <div class="char-skill">{{ char.skill }}</div>
+                </div>
+              </div>
+              <div v-if="!gameDataStore.getAssistCharArrayStatus || gameDataStore.getAssistCharArrayStatus.length === 0" class="no-assist-char">
+                无助战干员
+              </div>
+            </div>
+            <div class="assist-count">共 {{ gameDataStore.getAssistCharCount || 0 }} 名助战干员</div>
+          </div>
         </div>
       </div>
 
@@ -717,6 +753,7 @@ onMounted(() => {
   border-radius: 6px;
   border: 1px solid #4a4a4a;
   padding: 15px;
+  margin-bottom: 15px;
 }
 
 .data-grid {
@@ -755,6 +792,113 @@ onMounted(() => {
   font-size: 14px;
   color: #ccc;
   font-weight: 600;
+}
+
+/* 助战干员板块样式 - 新增 */
+.assist-chars-section {
+  margin-bottom: 15px;
+}
+
+.assist-chars-section h3 {
+  margin-bottom: 15px;
+  color: #9feaf9;
+  font-size: 20px;
+}
+
+.assist-chars-card {
+  background: #3a3a3a;
+  border-radius: 6px;
+  border: 1px solid #4a4a4a;
+  padding: 15px;
+}
+
+.assist-chars-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.assist-char-item {
+  background: #333333;
+  border: 1px solid #404040;
+  border-radius: 8px;
+  padding: 12px;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  transition: all 0.3s ease;
+  min-height: 80px;
+}
+
+.assist-char-item:hover {
+  background: #3a3a3a;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+/* 左边：头像容器 */
+.char-avatar-container {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.char-avatar {
+  width: 60px;
+  height: 60px;
+  object-fit: cover;
+  border: 2px solid #404040;
+  background: #2d2d2d;
+}
+
+/* 右边：信息容器 */
+.char-info-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0; /* 防止文本溢出 */
+}
+
+.char-name {
+  font-size: 16px;
+  font-weight: 600;
+  color: #9feaf9;
+  line-height: 1.2;
+}
+
+.char-level {
+  font-size: 13px;
+  color: #fad000;
+  line-height: 1.2;
+}
+
+.char-skill {
+  font-size: 12px;
+  color: #6cc24a;
+  line-height: 1.2;
+}
+
+.no-assist-char {
+  grid-column: 1 / -1;
+  text-align: center;
+  color: #999;
+  font-size: 14px;
+  padding: 40px 20px;
+  background: #333333;
+  border: 1px solid #404040;
+  border-radius: 8px;
+}
+
+.assist-count {
+  text-align: center;
+  font-size: 12px;
+  color: #666;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid #404040;
 }
 
 /* 未登录状态 */
@@ -1283,6 +1427,10 @@ onMounted(() => {
   }
 
   .data-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .assist-chars-grid {
     grid-template-columns: 1fr;
   }
 

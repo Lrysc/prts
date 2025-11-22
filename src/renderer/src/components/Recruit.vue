@@ -388,9 +388,8 @@ onMounted(() => {
         <ul>
           <li>点击标签即可查看可能出现的干员</li>
           <li>最多可以选择5个标签</li>
-          <li><span class="high-senior-text">高级资深干员</span>标签必定出现6星干员</li>
-          <li><span class="senior-text">资深干员</span>标签必定出现5星干员</li>
-          <li><span class="newbie-text">新手</span>标签只会出现1-3星干员</li>
+          <li><span class="high-senior-text">高级资深干员</span>必须拉满九小时才能保证不被划掉tag！！！</li>
+          <li><span class="senior-text">资深干员</span>必须拉满九小时才能保证不被划掉tag！！！</li>
           <li>组合特定标签可以精确筛选目标干员</li>
         </ul>
       </div>
@@ -765,11 +764,6 @@ onMounted(() => {
 
 .senior-text {
   color: #ffd700; /* 金色 */
-  font-weight: 600;
-}
-
-.newbie-text {
-  color: #6cc24a;
   font-weight: 600;
 }
 

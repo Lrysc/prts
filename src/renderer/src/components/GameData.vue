@@ -1,338 +1,9 @@
-<script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch, computed } from 'vue';
-import { useAuthStore } from '@stores/auth';
-import { useGameDataStore } from '@stores/gameData';
-import { AuthAPI } from '@services/api';
-import {
-  showSuccess,
-  showError,
-  showWarning,
-  showInfo
-} from '@services/toastService';
-
-// ==================== Store实例初始化 ====================
-/**
- * 认证状态管理store
- * 负责用户登录状态、凭证信息的管理
- */
-const authStore = useAuthStore();
-
-/**
- * 游戏数据管理store
- * 负责游戏数据的获取、缓存、格式化等操作
- */
-const gameDataStore = useGameDataStore();
-
-// ==================== 计算属性定义 ====================
-/**
- * 数据存在状态计算属性
- * 用于判断是否已经成功加载了游戏数据
- * 替代原本缺失的 gameDataStore.hasData 属性
- */
-const hasGameData = computed(() => {
-  return !!gameDataStore.playerData && Object.keys(gameDataStore.playerData).length > 0;
-});
-
-/**
- * 是否显示加载状态
- * 只在初始加载且没有数据时显示
- */
-const showLoading = computed(() => {
-  return gameDataStore.isLoading && !hasGameData.value;
-});
-
-// ==================== 组件状态管理 ====================
-
-/**
- * 签到操作状态
- * 控制签到按钮的加载状态和禁用状态
- */
-const isAttending = ref(false);
-
-/**
- * 右键菜单可见性状态
- * 控制右键菜单的显示和隐藏
- */
-const contextMenuVisible = ref(false);
-
-/**
- * 右键菜单位置状态
- * 存储右键菜单的坐标位置，支持边缘检测
- */
-const contextMenuPosition = ref({ x: 0, y: 0 });
-
-// ==================== 右键菜单功能 ====================
-
-/**
- * 显示右键菜单（带边缘检测防止被遮挡）
- * @param event 鼠标事件对象
- */
-const showContextMenu = (event: MouseEvent) => {
-  // 阻止浏览器默认的右键菜单
-  event.preventDefault();
-  // 阻止事件冒泡到父元素
-  event.stopPropagation();
-
-  // 菜单尺寸定义
-  const menuWidth = 150; // 菜单宽度
-  const menuHeight = 50; // 菜单高度
-  const viewportWidth = window.innerWidth;
-  const viewportHeight = window.innerHeight;
-
-  // 初始位置为鼠标点击位置
-  let x = event.clientX;
-  let y = event.clientY;
-
-  // 边缘检测：如果靠近右侧边缘，向左偏移
-  if (x + menuWidth > viewportWidth) {
-    x = viewportWidth - menuWidth - 10;
-  }
-
-  // 边缘检测：如果靠近底部边缘，向上偏移
-  if (y + menuHeight > viewportHeight) {
-    y = viewportHeight - menuHeight - 10;
-  }
-
-  // 确保位置不会超出屏幕边界（最小10px边距）
-  x = Math.max(10, Math.min(x, viewportWidth - menuWidth - 10));
-  y = Math.max(10, Math.min(y, viewportHeight - menuHeight - 10));
-
-  // 更新菜单位置并显示菜单
-  contextMenuPosition.value = { x, y };
-  contextMenuVisible.value = true;
-};
-
-/**
- * 隐藏右键菜单
- * 用于点击菜单外部区域时关闭菜单
- */
-const hideContextMenu = () => {
-  contextMenuVisible.value = false;
-};
-
-/**
- * 处理容器点击事件（阻止冒泡）
- * 防止点击容器内部时触发全局的菜单隐藏
- * @param event 鼠标事件对象
- */
-const handleContainerClick = (event: MouseEvent) => {
-  event.stopPropagation();
-};
-
-// ==================== 数据操作功能 ====================
-
-/**
- * 处理刷新数据请求
- * 调用store的刷新方法并处理结果
- */
-const handleRefresh = async () => {
-  // 先隐藏右键菜单
-  hideContextMenu();
-
-  try {
-    // 显示刷新中的浮窗通知 - 修复参数问题
-    showInfo('神经连接中...');
-
-    // 调用store的刷新数据方法
-    await gameDataStore.refreshData();
-
-    // 显示成功提示
-    showSuccess('神经连接同步完成！');
-  } catch (error: any) {
-    // 安全的错误处理，避免未处理的Promise拒绝
-    const errorMessage = error?.message || '未知错误';
-    console.error('刷新数据失败:', error);
-    showError(`同步失败：${errorMessage}`);
-  }
-};
-
-/**
- * 处理森空岛签到功能
- * 包含登录检查、凭证验证、角色选择、签到执行等完整流程
- */
-const handleAttendance = async () => {
-  // 前置检查：必须已登录且有绑定角色
-  if (!authStore.isLogin || !authStore.bindingRoles?.length) {
-    showWarning('请先登录并绑定游戏角色');
-    return;
-  }
-
-  // 设置签到中状态，禁用按钮
-  isAttending.value = true;
-
-  try {
-    // 第一步：验证cred有效性
-    console.log('=== 开始验证cred有效性 ===');
-    const isCredValid = await AuthAPI.checkCred(authStore.sklandCred);
-    console.log('Cred有效性验证结果:', isCredValid);
-
-    if (!isCredValid) {
-      throw new Error('Cred已失效，请重新登录');
-    }
-
-    // 第二步：获取目标角色信息
-    // 优先选择默认角色，否则选择第一个角色
-    const targetRole = authStore.bindingRoles.find((role: any) => role.isDefault) || authStore.bindingRoles[0];
-    if (!targetRole) {
-      throw new Error('未找到绑定的游戏角色');
-    }
-
-    // 调试信息输出
-    console.log('=== 绑定角色详细信息 ===');
-    console.log('完整的绑定角色列表:', JSON.stringify(authStore.bindingRoles, null, 2));
-    console.log('选中的角色信息:', JSON.stringify(targetRole, null, 2));
-    console.log('角色UID:', targetRole.uid);
-    console.log('channelMasterId:', targetRole.channelMasterId);
-    console.log('========================');
-
-    const gameId = targetRole.channelMasterId;
-    console.log('用于签到的gameId:', gameId);
-
-    // 第三步：执行签到请求
-    const attendanceData = await AuthAPI.attendance(
-      authStore.sklandCred,
-      authStore.sklandSignToken,
-      targetRole.uid,
-      gameId
-    );
-
-    // 第四步：处理签到结果
-    if (attendanceData.alreadyAttended) {
-      showInfo('今日已签到');
-    } else {
-      // 解析签到奖励信息
-      const awards = attendanceData.awards || [];
-      const awardTexts = awards.map((award: any) => {
-        const count = award.count || 0;
-        const name = award.resource?.name || '未知奖励';
-        return `${name} x${count}`;
-      }).join(', ');
-
-      showSuccess(`签到成功！获得：${awardTexts}`);
-    }
-
-  } catch (error: any) {
-    // 安全的错误处理，提供友好的错误信息
-    const errorMsg = error?.message || '签到失败，请稍后重试';
-    console.error('签到过程发生错误:', error);
-    showError(errorMsg);
-  } finally {
-    // 无论成功失败，都重置签到状态
-    isAttending.value = false;
-  }
-};
-
-// ==================== 生命周期管理 ====================
-
-/**
- * 组件挂载时的初始化操作
- * 包括启动定时器、事件监听、数据加载等
- */
-onMounted(async () => {
-  console.log('GameData组件挂载，开始初始化...');
-
-  // 启动时间更新定时器（用于实时数据如理智恢复时间等）
-  gameDataStore.startTimeUpdate();
-
-  // 添加全局事件监听器
-  // 点击任意位置隐藏右键菜单
-  document.addEventListener('click', hideContextMenu);
-  // 右键点击时检查是否需要隐藏菜单
-  document.addEventListener('contextmenu', (event) => {
-    // 只在菜单显示时处理右键事件
-    if (!contextMenuVisible.value) return;
-    const target = event.target as HTMLElement;
-    // 如果点击的不是菜单本身，则隐藏菜单
-    if (!target.closest('.context-menu')) {
-      hideContextMenu();
-    }
-  });
-
-  try {
-    // 根据登录状态决定数据加载策略
-    if (authStore.isLogin) {
-      console.log('用户已登录，直接加载游戏数据');
-      await gameDataStore.fetchGameData();
-    } else {
-      console.log('用户未登录，尝试恢复登录状态');
-      const isRestored = await authStore.restoreAuthState();
-      if (isRestored) {
-        console.log('登录状态恢复成功，加载游戏数据');
-        await gameDataStore.fetchGameData();
-        showSuccess('欢迎回来，博士！');
-      } else {
-        console.log('登录状态恢复失败，显示未登录状态');
-        // 不设置loading状态，让组件正常显示未登录状态
-      }
-    }
-  } catch (error) {
-    // 捕获错误但不阻止组件显示
-    console.error('GameData组件初始化失败:', error);
-    // 组件会显示错误状态或空数据，保证用户体验
-  }
-});
-
-/**
- * 监听登录状态变化
- * 当用户登录状态发生变化时，重新加载数据
- */
-watch(() => authStore.isLogin, async (newLoginState, oldLoginState) => {
-  // 只有当从未登录变为已登录时才执行
-  if (newLoginState && !oldLoginState) {
-    console.log('检测到登录状态变化，清除缓存并重新加载数据');
-    // 清除旧缓存数据
-    gameDataStore.clearCache();
-    try {
-      // 重新获取最新数据
-      await gameDataStore.fetchGameData();
-    } catch (error) {
-      console.error('登录状态变化后重新加载数据失败:', error);
-      // 不显示错误提示，让组件正常显示
-    }
-  }
-});
-
-/**
- * 组件卸载时的清理操作
- * 释放资源，移除事件监听器
- */
-onUnmounted(() => {
-  // 停止时间更新定时器
-  gameDataStore.stopTimeUpdate();
-  // 移除全局事件监听器
-  document.removeEventListener('click', hideContextMenu);
-  document.removeEventListener('contextmenu', hideContextMenu);
-});
-</script>
-
 <template>
-  <div class="game-data-container" @contextmenu="showContextMenu" @click="handleContainerClick">
-
-    <!-- ==================== 右键菜单组件 ==================== -->
-    <div
-      v-if="contextMenuVisible"
-      class="context-menu"
-      :style="{
-        left: `${contextMenuPosition.x}px`,
-        top: `${contextMenuPosition.y}px`
-      }"
-      @click.stop
-    >
-      <button
-        class="context-menu-item refresh-item"
-        @click="handleRefresh"
-        :disabled="gameDataStore.isRefreshing"
-        :class="{ refreshing: gameDataStore.isRefreshing }"
-      >
-        <span class="context-menu-text">
-          {{ gameDataStore.isRefreshing ? '刷新中...' : '刷新' }}
-        </span>
-      </button>
-    </div>
+  <div class="game-data-container">
 
     <!-- ==================== 主内容区域 ==================== -->
 
-    <!-- 初始加载状态提示 - 在主要区域居中显示 -->
+    <!-- 初始加载状态提示 -->
     <div class="main-loading-container" v-if="showLoading">
       <div class="loading-content">
         <div class="spinner"></div>
@@ -340,7 +11,7 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <!-- 数据卡片区域（永远显示，无论什么状态） -->
+    <!-- 数据卡片区域 -->
     <div class="cards-wrapper" v-else>
 
       <!-- 数据头部操作栏 -->
@@ -426,40 +97,6 @@ onUnmounted(() => {
         </ul>
       </div>
 
-      <!-- 助战干员卡片 -->
-      <div class="section-card" v-if="authStore.isLogin">
-        <h3 class="section-title">--- 助战干员 ---</h3>
-        <div class="assist-chars-grid">
-          <div
-            v-for="(char, index) in gameDataStore.getAssistCharArrayStatus"
-            :key="index"
-            class="assist-char-item"
-          >
-            <!-- 左边：头像 -->
-            <div class="char-avatar-container">
-              <img
-                :src="char.avatarUrl"
-                :alt="char.name"
-                class="char-avatar"
-                @error="(event) => gameDataStore.handleOperatorAvatarError(char.charId, event)"
-                @load="() => gameDataStore.handleOperatorAvatarLoad(char.charId)"
-              />
-            </div>
-
-            <!-- 右边：干员信息 -->
-            <div class="char-info-container">
-              <div class="char-name">{{ char.name }}</div>
-              <div class="char-level">{{ char.level }}</div>
-              <div class="char-skill">{{ char.skill }}</div>
-            </div>
-          </div>
-          <div v-if="!gameDataStore.getAssistCharArrayStatus || gameDataStore.getAssistCharArrayStatus.length === 0" class="no-assist-char">
-            无助战干员
-          </div>
-        </div>
-        <div class="assist-count">共 {{ gameDataStore.getAssistCharCount || 0 }} 名助战干员</div>
-      </div>
-
       <!-- 基建数据卡片 -->
       <div class="section-card" v-if="authStore.isLogin">
         <h3 class="section-title">--- 基建数据 ---</h3>
@@ -514,6 +151,248 @@ onUnmounted(() => {
   </div>
 </template>
 
+<script setup lang="ts">
+import { ref, onMounted, computed, watch, inject } from 'vue';
+import { useAuthStore } from '@stores/auth';
+import { useGameDataStore } from '@stores/gameData';
+import { AuthAPI } from '@services/api';
+import {
+  showSuccess,
+  showError,
+  showWarning,
+  showInfo
+} from '@services/toastService';
+
+// ==================== Store实例初始化 ====================
+/**
+ * 认证状态管理store
+ * 负责用户登录状态、凭证信息的管理
+ */
+const authStore = useAuthStore();
+
+/**
+ * 游戏数据管理store
+ * 负责游戏数据的获取、缓存、格式化等操作
+ */
+const gameDataStore = useGameDataStore();
+
+// ==================== 注入全局刷新方法 ====================
+/**
+ * 从App.vue注入的全局刷新方法
+ * 用于在GameData组件内部也可以触发全局刷新
+ */
+const refreshData = inject('refreshData') as (() => Promise<void>) | undefined;
+
+/**
+ * 从App.vue注入的当前活动组件名称
+ * 用于判断当前是否在GameData页面
+ */
+const currentActiveComponent = inject('currentActiveComponent') as { value: string };
+
+// ==================== 计算属性定义 ====================
+/**
+ * 数据存在状态计算属性
+ * 用于判断是否已经成功加载了游戏数据
+ */
+const hasGameData = computed(() => {
+  return !!gameDataStore.playerData && Object.keys(gameDataStore.playerData).length > 0;
+});
+
+/**
+ * 是否显示加载状态
+ * 只在初始加载且没有数据时显示
+ */
+const showLoading = computed(() => {
+  return gameDataStore.isLoading && !hasGameData.value;
+});
+
+// ==================== 组件状态管理 ====================
+
+/**
+ * 签到操作状态
+ * 控制签到按钮的加载状态和禁用状态
+ */
+const isAttending = ref(false);
+
+// ==================== 数据操作功能 ====================
+
+/**
+ * 处理森空岛签到功能
+ * 包含登录检查、凭证验证、角色选择、签到执行等完整流程
+ */
+const handleAttendance = async () => {
+  // 前置检查：必须已登录且有绑定角色
+  if (!authStore.isLogin || !authStore.bindingRoles?.length) {
+    showWarning('请先登录并绑定游戏角色');
+    return;
+  }
+
+  // 设置签到中状态，禁用按钮
+  isAttending.value = true;
+
+  try {
+    // 第一步：验证cred有效性
+    console.log('=== 开始验证cred有效性 ===');
+    const isCredValid = await AuthAPI.checkCred(authStore.sklandCred);
+    console.log('Cred有效性验证结果:', isCredValid);
+
+    if (!isCredValid) {
+      throw new Error('Cred已失效，请重新登录');
+    }
+
+    // 第二步：获取目标角色信息
+    // 优先选择默认角色，否则选择第一个角色
+    const targetRole = authStore.bindingRoles.find((role: any) => role.isDefault) || authStore.bindingRoles[0];
+    if (!targetRole) {
+      throw new Error('未找到绑定的游戏角色');
+    }
+
+    // 调试信息输出
+    console.log('=== 绑定角色详细信息 ===');
+    console.log('完整的绑定角色列表:', JSON.stringify(authStore.bindingRoles, null, 2));
+    console.log('选中的角色信息:', JSON.stringify(targetRole, null, 2));
+    console.log('角色UID:', targetRole.uid);
+    console.log('channelMasterId:', targetRole.channelMasterId);
+    console.log('========================');
+
+    const gameId = targetRole.channelMasterId;
+    console.log('用于签到的gameId:', gameId);
+
+    // 第三步：执行签到请求
+    const attendanceData = await AuthAPI.attendance(
+      authStore.sklandCred,
+      authStore.sklandSignToken,
+      targetRole.uid,
+      gameId
+    );
+
+    // 第四步：处理签到结果
+    if (attendanceData.alreadyAttended) {
+      showInfo('今日已签到');
+    } else {
+      // 解析签到奖励信息
+      const awards = attendanceData.awards || [];
+      const awardTexts = awards.map((award: any) => {
+        const count = award.count || 0;
+        const name = award.resource?.name || '未知奖励';
+        return `${name} x${count}`;
+      }).join(', ');
+
+      showSuccess(`签到成功！获得：${awardTexts}`);
+
+      // 签到成功后自动刷新数据
+      if (refreshData) {
+        setTimeout(() => {
+          refreshData();
+        }, 1000);
+      }
+    }
+
+  } catch (error: any) {
+    // 安全的错误处理，提供友好的错误信息
+    const errorMsg = error?.message || '签到失败，请稍后重试';
+    console.error('签到过程发生错误:', error);
+    showError(errorMsg);
+  } finally {
+    // 无论成功失败，都重置签到状态
+    isAttending.value = false;
+  }
+};
+
+/**
+ * 手动刷新游戏数据
+ * 提供给组件内部使用的刷新方法
+ */
+const handleManualRefresh = async () => {
+  if (refreshData) {
+    await refreshData();
+  } else {
+    // 如果全局刷新方法不可用，使用本地刷新
+    try {
+      showInfo('神经连接中...');
+      await gameDataStore.refreshData();
+      showSuccess('神经连接同步完成！');
+    } catch (error: any) {
+      const errorMessage = error?.message || '未知错误';
+      console.error('刷新数据失败:', error);
+      showError(`同步失败：${errorMessage}`);
+    }
+  }
+};
+
+// ==================== 生命周期管理 ====================
+
+/**
+ * 组件挂载时的初始化操作
+ * 包括数据加载等
+ */
+onMounted(async () => {
+  console.log('GameData组件挂载，开始初始化...');
+
+  try {
+    // 根据登录状态决定数据加载策略
+    if (authStore.isLogin) {
+      console.log('用户已登录，直接加载游戏数据');
+      await gameDataStore.fetchGameData();
+    } else {
+      console.log('用户未登录，尝试恢复登录状态');
+      const isRestored = await authStore.restoreAuthState();
+      if (isRestored) {
+        console.log('登录状态恢复成功，加载游戏数据');
+        await gameDataStore.fetchGameData();
+        showSuccess('欢迎回来，博士！');
+      } else {
+        console.log('登录状态恢复失败，显示未登录状态');
+        // 不设置loading状态，让组件正常显示未登录状态
+      }
+    }
+  } catch (error) {
+    // 捕获错误但不阻止组件显示
+    console.error('GameData组件初始化失败:', error);
+    // 组件会显示错误状态或空数据，保证用户体验
+  }
+});
+
+/**
+ * 监听登录状态变化
+ * 当用户登录状态发生变化时，重新加载数据
+ */
+watch(() => authStore.isLogin, async (newLoginState, oldLoginState) => {
+  // 只有当从未登录变为已登录时才执行
+  if (newLoginState && !oldLoginState) {
+    console.log('检测到登录状态变化，清除缓存并重新加载数据');
+    // 清除旧缓存数据
+    gameDataStore.clearCache();
+    try {
+      // 重新获取最新数据
+      await gameDataStore.fetchGameData();
+    } catch (error) {
+      console.error('登录状态变化后重新加载数据失败:', error);
+      // 不显示错误提示，让组件正常显示
+    }
+  }
+});
+
+/**
+ * 监听当前活动组件变化
+ * 当切换到GameData页面时自动刷新数据（可选功能）
+ */
+watch(() => currentActiveComponent?.value, (newComponent, oldComponent) => {
+  if (newComponent === 'GameData' && oldComponent !== 'GameData') {
+    console.log('切换到GameData页面，自动刷新数据');
+    // 可以在这里添加自动刷新逻辑，但为了避免频繁请求，暂时注释
+    // handleManualRefresh();
+  }
+});
+
+// ==================== 暴露方法给模板 ====================
+/**
+ * 暴露手动刷新方法，供模板中使用（如果需要）
+ */
+defineExpose({
+  handleManualRefresh
+});
+</script>
 
 <style scoped>
 /* ==================== 容器布局样式 ==================== */
@@ -523,68 +402,7 @@ onUnmounted(() => {
   margin: 0 auto;
   min-height: 100vh;
   position: relative;
-  user-select: none; /* 防止文本选中干扰右键菜单 */
-}
-
-/* ==================== 右键菜单样式 ==================== */
-.context-menu {
-  position: fixed;
-  background: #2d2d2d;
-  border: 1px solid #404040;
-  border-radius: 8px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
-  z-index: 10000;
-  min-width: 150px;
-  padding: 8px;
-  animation: contextMenuSlideIn 0.15s ease-out;
-  backdrop-filter: blur(10px);
-}
-
-.context-menu-item {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  padding: 12px 16px;
-  background: transparent;
-  border: none;
-  border-radius: 6px;
-  color: #ccc;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  font-size: 14px;
-  font-family: inherit;
-}
-
-.context-menu-item:hover:not(:disabled) {
-  background: #646cff;
-  color: white;
-}
-
-.context-menu-item:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.context-menu-item.refreshing {
-  background: #ffa500;
-  color: white;
-}
-
-.context-menu-text {
-  text-align: center;
-}
-
-/* 右键菜单进入动画 */
-@keyframes contextMenuSlideIn {
-  from {
-    opacity: 0;
-    transform: scale(0.95) translateY(-5px);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1) translateY(0);
-  }
+  user-select: none; /* 防止文本选中干扰用户体验 */
 }
 
 /* ==================== 主要区域加载状态样式 ==================== */
@@ -789,13 +607,14 @@ onUnmounted(() => {
   padding: 12px;
   background: #333333;
   border-radius: 6px;
-  transition: background 0.3s ease;
+  transition: all 0.3s ease;
   border: 1px solid #404040;
 }
 
 .data-item:hover {
   background: #3a3a3a;
   transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
 }
 
 .label {
@@ -827,122 +646,27 @@ onUnmounted(() => {
   margin-top: 2px;
 }
 
-/* 助战干员头像样式 */
-.char-avatar-container {
-  display: flex;
-  justify-content: center;
-  margin-bottom: 8px;
-}
+/* 数据项颜色区分 - 为不同类型数据提供视觉区分 */
+.data-item:nth-child(1) .value { color: #9feaf9; } /* 理智 - 蓝色 */
+.data-item:nth-child(2) .value { color: #fad000; } /* 剿灭 - 黄色 */
+.data-item:nth-child(3) .value { color: #6cc24a; } /* 每日任务 - 绿色 */
+.data-item:nth-child(4) .value { color: #ff7eb9; } /* 每周任务 - 粉色 */
+.data-item:nth-child(5) .value { color: #7afcff; } /* 数据增补仪 - 青色 */
+.data-item:nth-child(6) .value { color: #ff9800; } /* 数据增补条 - 橙色 */
+.data-item:nth-child(7) .value { color: #ff65a3; } /* 公开招募 - 玫红 */
+.data-item:nth-child(8) .value { color: #feff9c; } /* 公招刷新 - 浅黄 */
 
-.char-avatar {
-  width: 50px;
-  height: 50px;
-  object-fit: cover;
-  border: 2px solid #404040;
-  background: #2d2d2d;
-}
+/* 基建数据颜色 */
+.data-item:nth-child(9) .value { color: #6bffb8; } /* 贸易站 - 亮绿 */
+.data-item:nth-child(10) .value { color: #9feaf9; } /* 制造站 - 蓝色 */
+.data-item:nth-child(11) .value { color: #ff7eb9; } /* 宿舍休息 - 粉色 */
+.data-item:nth-child(12) .value { color: #fad000; } /* 会客室线索 - 黄色 */
+.data-item:nth-child(13) .value { color: #ff6b6b; } /* 干员疲劳 - 红色 */
+.data-item:nth-child(14) .value { color: #7afcff; } /* 无人机 - 青色 */
+.data-item:nth-child(15) .value { color: #b18cff; } /* 训练室 - 紫色 */
 
-/* 助战干员网格布局 */
-.assist-chars-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 16px;
-  margin-bottom: 12px;
-}
-
-.assist-char-item {
-  background: #333333;
-  border: 1px solid #404040;
-  border-radius: 8px;
-  padding: 12px;
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  transition: all 0.3s ease;
-  min-height: 80px;
-}
-
-.assist-char-item:hover {
-  background: #3a3a3a;
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-}
-
-/* 左边：头像容器 */
-.char-avatar-container {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.char-avatar {
-  width: 60px;
-  height: 60px;
-  object-fit: cover;
-  border: 2px solid #404040;
-  background: #2d2d2d;
-}
-
-/* 右边：信息容器 */
-.char-info-container {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0; /* 防止文本溢出 */
-}
-
-.char-name {
-  font-size: 16px;
-  font-weight: 600;
-  color: #9feaf9;
-  line-height: 1.2;
-}
-
-.char-level {
-  font-size: 13px;
-  color: #fad000;
-  line-height: 1.2;
-}
-
-.char-skill {
-  font-size: 12px;
-  color: #6cc24a;
-  line-height: 1.2;
-}
-
-.no-assist-char {
-  grid-column: 1 / -1;
-  text-align: center;
-  color: #999;
-  font-size: 14px;
-  padding: 40px 20px;
-  background: #333333;
-  border: 1px solid #404040;
-  border-radius: 8px;
-}
-
-.assist-count {
-  text-align: center;
-  font-size: 12px;
-  color: #666;
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px solid #404040;
-}
-
-/* 数据项颜色区分 */
-.data-item:nth-child(1) .value { color: #9feaf9; }
-.data-item:nth-child(2) .value { color: #fad000; }
-.data-item:nth-child(3) .value { color: #6cc24a; }
-.data-item:nth-child(4) .value { color: #ff7eb9; }
-.data-item:nth-child(5) .value { color: #7afcff; }
-.data-item:nth-child(6) .value { color: #ff9800; }
-.data-item:nth-child(7) .value { color: #ff65a3; }
-.data-item:nth-child(8) .value { color: #feff9c; }
-.data-item:nth-child(9) .value { color: #ff6b6b; }
-.data-item:nth-child(10) .value { color: #6bffb8; }
+/* 游戏战绩颜色 */
+.data-item:nth-child(16) .value { color: #ff9800; } /* 集成战略 - 橙色 */
 
 /* ==================== 动画定义 ==================== */
 @keyframes spin {
@@ -954,5 +678,50 @@ onUnmounted(() => {
   0% { box-shadow: 0 0 0 0 rgba(255, 165, 0, 0.4); }
   70% { box-shadow: 0 0 0 10px rgba(255, 165, 0, 0); }
   100% { box-shadow: 0 0 0 0 rgba(255, 165, 0, 0); }
+}
+
+/* ==================== 响应式设计 ==================== */
+@media (max-width: 768px) {
+  .game-data-container {
+    padding: 10px;
+  }
+
+  .data-grid {
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    gap: 8px;
+  }
+
+  .data-header {
+    flex-direction: column;
+    gap: 12px;
+    align-items: flex-start;
+  }
+
+  .header-buttons {
+    align-self: flex-end;
+  }
+
+  .section-card {
+    padding: 15px;
+  }
+}
+
+@media (max-width: 480px) {
+  .data-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .main-loading-container {
+    min-height: 50vh;
+  }
+
+  .loading-text {
+    font-size: 16px;
+  }
+
+  .spinner {
+    width: 40px;
+    height: 40px;
+  }
 }
 </style>

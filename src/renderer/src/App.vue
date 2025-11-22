@@ -4,78 +4,381 @@ import Recruit from '@components/Recruit.vue'
 import Material from '@components/Material.vue'
 import LoginWindow from '@components/LoginWindow.vue'
 import Setting from '@components/Setting.vue'
-import ToastNotification from '@components/ToastNotification.vue' // 导入浮窗组件
+import ToastNotification from '@components/ToastNotification.vue'
 import { useAuthStore } from '@stores/auth'
-import { ref } from 'vue'
+import { useGameDataStore } from '@stores/gameData'
+import { ref, onMounted, onUnmounted, provide, computed } from 'vue'
+import {
+  showSuccess,
+  showError,
+  showInfo
+} from '@services/toastService'
 
-const authStore = useAuthStore()
-const showLogin = ref(false)
-const activeComponent = ref('GameData') // 默认显示首页
-const showUserMenu = ref(false) // 控制用户菜单显示
+// ==================== Store实例初始化 ====================
+/**
+ * 认证状态管理store
+ */
+const authStore = useAuthStore();
 
+/**
+ * 游戏数据管理store
+ */
+const gameDataStore = useGameDataStore();
+
+// ==================== 状态管理 ====================
+/**
+ * 登录窗口显示状态
+ */
+const showLogin = ref(false);
+
+/**
+ * 当前活动组件名称
+ * 控制主内容区显示的组件
+ */
+const activeComponent = ref('GameData');
+
+/**
+ * 用户菜单显示状态
+ * 控制用户下拉菜单的显示/隐藏
+ */
+const showUserMenu = ref(false);
+
+/**
+ * 右键菜单可见性状态
+ * 控制全局右键菜单的显示和隐藏
+ */
+const contextMenuVisible = ref(false);
+
+/**
+ * 右键菜单位置状态
+ * 存储右键菜单的坐标位置，支持边缘检测
+ */
+const contextMenuPosition = ref({ x: 0, y: 0 });
+
+/**
+ * 刷新操作状态
+ * 控制全局刷新按钮的加载状态
+ */
+const isRefreshing = ref(false);
+
+// ==================== 计算属性 ====================
+/**
+ * 当前组件刷新函数映射
+ * 根据当前活动组件返回对应的刷新方法
+ */
+const currentRefreshMethod = computed(() => {
+  const refreshMethods: Record<string, () => Promise<void>> = {
+    'GameData': async () => {
+      await gameDataStore.refreshData();
+    },
+    'Recruit': async () => {
+      // Recruit组件的刷新逻辑
+      console.log('刷新公招计算数据');
+      // 这里可以调用Recruit组件的刷新方法
+    },
+    'Material': async () => {
+      // Material组件的刷新逻辑
+      console.log('刷新材料计算数据');
+      // 这里可以调用Material组件的刷新方法
+    },
+    'Setting': async () => {
+      // Setting组件通常不需要刷新
+      console.log('设置页面无需刷新');
+    }
+  };
+  return refreshMethods[activeComponent.value];
+});
+
+/**
+ * 当前组件刷新提示映射
+ * 根据当前活动组件返回对应的刷新提示
+ */
+const currentRefreshMessage = computed(() => {
+  const messages: Record<string, { loading: string, success: string }> = {
+    'GameData': {
+      loading: '神经连接中...',
+      success: '神经连接同步完成！'
+    },
+    'Recruit': {
+      loading: '更新公招数据中...',
+      success: '公招数据更新完成！'
+    },
+    'Material': {
+      loading: '更新材料数据中...',
+      success: '材料数据更新完成！'
+    },
+    'Setting': {
+      loading: '刷新设置中...',
+      success: '设置刷新完成！'
+    }
+  };
+  return messages[activeComponent.value] || { loading: '刷新中...', success: '刷新完成！' };
+});
+
+// ==================== 全局右键菜单功能 ====================
+
+/**
+ * 显示全局右键菜单（带边缘检测防止被遮挡）
+ * @param event 鼠标事件对象
+ */
+const showContextMenu = (event: MouseEvent) => {
+  // 阻止浏览器默认的右键菜单
+  event.preventDefault();
+  // 阻止事件冒泡到父元素
+  event.stopPropagation();
+
+  // 菜单尺寸定义
+  const menuWidth = 150;
+  const menuHeight = 50;
+  const viewportWidth = window.innerWidth;
+  const viewportHeight = window.innerHeight;
+
+  // 初始位置为鼠标点击位置
+  let x = event.clientX;
+  let y = event.clientY;
+
+  // 边缘检测：如果靠近右侧边缘，向左偏移
+  if (x + menuWidth > viewportWidth) {
+    x = viewportWidth - menuWidth - 10;
+  }
+
+  // 边缘检测：如果靠近底部边缘，向上偏移
+  if (y + menuHeight > viewportHeight) {
+    y = viewportHeight - menuHeight - 10;
+  }
+
+  // 确保位置不会超出屏幕边界（最小10px边距）
+  x = Math.max(10, Math.min(x, viewportWidth - menuWidth - 10));
+  y = Math.max(10, Math.min(y, viewportHeight - menuHeight - 10));
+
+  // 更新菜单位置并显示菜单
+  contextMenuPosition.value = { x, y };
+  contextMenuVisible.value = true;
+};
+
+/**
+ * 隐藏全局右键菜单
+ * 用于点击菜单外部区域时关闭菜单
+ */
+const hideContextMenu = () => {
+  contextMenuVisible.value = false;
+};
+
+// ==================== 全局刷新功能 ====================
+
+/**
+ * 全局刷新数据功能
+ * 根据当前活动组件调用对应的刷新方法
+ */
+const handleGlobalRefresh = async () => {
+  // 先隐藏右键菜单
+  hideContextMenu();
+
+  // 设置刷新状态
+  isRefreshing.value = true;
+
+  try {
+    // 显示刷新中的浮窗通知
+    const { loading, success } = currentRefreshMessage.value;
+    showInfo(loading);
+
+    // 调用当前组件的刷新方法
+    const refreshMethod = currentRefreshMethod.value;
+    if (refreshMethod) {
+      await refreshMethod();
+    }
+
+    // 显示成功提示
+    showSuccess(success);
+
+  } catch (error: any) {
+    // 安全的错误处理
+    const errorMessage = error?.message || '未知错误';
+    console.error('全局刷新失败:', error);
+    showError(`刷新失败：${errorMessage}`);
+  } finally {
+    // 无论成功失败，都重置刷新状态
+    isRefreshing.value = false;
+  }
+};
+
+/**
+ * 键盘快捷键刷新
+ * 监听 F5 和 Ctrl+R 快捷键
+ */
+const handleKeyboardRefresh = (event: KeyboardEvent) => {
+  // 检查是否按下了 F5 或 Ctrl+R
+  if (event.key === 'F5' || (event.ctrlKey && event.key === 'r')) {
+    event.preventDefault(); // 阻止浏览器默认刷新行为
+    handleGlobalRefresh();
+  }
+};
+
+// ==================== 组件通信 ====================
+
+/**
+ * 提供刷新方法给子组件
+ * 子组件可以通过 inject('refreshData') 调用全局刷新
+ */
+provide('refreshData', handleGlobalRefresh);
+
+/**
+ * 提供当前组件名称给子组件
+ */
+provide('currentActiveComponent', activeComponent);
+
+// ==================== 组件方法 ====================
+
+/**
+ * 关闭登录窗口
+ */
 const closeLogin = () => {
-  showLogin.value = false
-}
+  showLogin.value = false;
+};
 
-// 处理用户图标点击
+/**
+ * 处理用户图标点击事件
+ * 根据登录状态显示不同内容
+ */
 const handleUserIconClick = () => {
   if (authStore.isLogin) {
-    // 已登录，显示设置页面
-    showUserMenu.value = !showUserMenu.value
+    // 已登录，显示用户菜单
+    showUserMenu.value = !showUserMenu.value;
   } else {
     // 未登录，显示登录窗口
-    showLogin.value = true
-    showUserMenu.value = false
+    showLogin.value = true;
+    showUserMenu.value = false;
   }
-}
+};
 
-// 切换主内容区组件
+/**
+ * 切换主内容区组件
+ * @param componentName 组件名称
+ */
 const switchComponent = (componentName: string) => {
-  activeComponent.value = componentName
-  showUserMenu.value = false // 切换组件时关闭菜单
-}
+  activeComponent.value = componentName;
+  showUserMenu.value = false; // 切换组件时关闭菜单
+};
 
-// 处理登录成功
+/**
+ * 处理登录成功回调
+ */
 const handleLoginSuccess = () => {
   console.log('登录成功，切换到首页');
-  activeComponent.value = 'GameData'
-  showUserMenu.value = false
-  // GameData组件会通过watch监听到登录状态变化并自动刷新数据
-}
+  activeComponent.value = 'GameData';
+  showUserMenu.value = false;
+};
 
-// 处理菜单项点击
+/**
+ * 处理菜单项点击
+ * @param action 菜单动作类型
+ */
 const handleMenuClick = (action: string) => {
   switch (action) {
     case 'setting':
-      activeComponent.value = 'Setting'
-      break
+      activeComponent.value = 'Setting';
+      break;
     case 'logout':
-      authStore.logout()
-      activeComponent.value = 'GameData'
-      break
+      authStore.logout();
+      activeComponent.value = 'GameData';
+      break;
   }
-  showUserMenu.value = false
-}
+  showUserMenu.value = false;
+};
 
-// 点击页面其他区域关闭菜单
+/**
+ * 点击页面其他区域关闭菜单
+ * @param event 鼠标事件对象
+ */
 const handleClickOutside = (event: MouseEvent) => {
-  const target = event.target as HTMLElement
+  const target = event.target as HTMLElement;
   if (!target.closest('.user-menu-container')) {
-    showUserMenu.value = false
+    showUserMenu.value = false;
   }
-}
+};
 
-// 动态组件映射
+// ==================== 生命周期管理 ====================
+
+/**
+ * 组件挂载时的初始化操作
+ */
+onMounted(() => {
+  console.log('App组件挂载，注册全局监听器');
+
+  // 启动游戏数据时间更新定时器
+  gameDataStore.startTimeUpdate();
+
+  // 注册全局右键事件监听器
+  document.addEventListener('contextmenu', showContextMenu);
+
+  // 注册全局点击事件监听器（用于隐藏右键菜单）
+  document.addEventListener('click', hideContextMenu);
+
+  // 注册键盘快捷键监听器
+  document.addEventListener('keydown', handleKeyboardRefresh);
+
+  // 初始化认证状态
+  authStore.restoreAuthState().then((isRestored) => {
+    if (isRestored) {
+      console.log('登录状态恢复成功');
+      showSuccess('欢迎回来，博士！');
+    }
+  });
+});
+
+/**
+ * 组件卸载时的清理操作
+ */
+onUnmounted(() => {
+  console.log('App组件卸载，移除全局监听器');
+
+  // 停止游戏数据时间更新定时器
+  gameDataStore.stopTimeUpdate();
+
+  // 移除全局事件监听器
+  document.removeEventListener('contextmenu', showContextMenu);
+  document.removeEventListener('click', hideContextMenu);
+  document.removeEventListener('keydown', handleKeyboardRefresh);
+});
+
+// ==================== 动态组件映射 ====================
+/**
+ * 组件名称到组件的映射
+ * 用于动态渲染组件
+ */
 const componentMap: Record<string, any> = {
   'GameData': GameData,
   'Recruit': Recruit,
   'Material': Material,
   'Setting': Setting
-}
+};
 </script>
 
 <template>
-  <div class="app-container" @click="handleClickOutside">
+  <div class="app-container" @click="handleClickOutside" @contextmenu="showContextMenu">
+
+    <!-- ==================== 全局右键菜单 ==================== -->
+    <div
+      v-if="contextMenuVisible"
+      class="context-menu"
+      :style="{
+        left: `${contextMenuPosition.x}px`,
+        top: `${contextMenuPosition.y}px`
+      }"
+      @click.stop
+    >
+      <button
+        class="context-menu-item refresh-item"
+        @click="handleGlobalRefresh"
+        :disabled="isRefreshing"
+        :class="{ refreshing: isRefreshing }"
+      >
+        <span class="context-menu-text">
+          {{ isRefreshing ? '刷新中...' : '刷新当前页面' }}
+        </span>
+      </button>
+    </div>
+
     <!-- 顶部 Header -->
     <header class="app-header">
       <div class="header-left">
@@ -85,7 +388,11 @@ const componentMap: Record<string, any> = {
 
       <!-- 用户图标放在右侧 -->
       <div class="header-right user-menu-container">
-        <button class="user-icon-btn" @click="handleUserIconClick" :title="authStore.isLogin ? '用户菜单' : '登录'">
+        <button
+          class="user-icon-btn"
+          @click="handleUserIconClick"
+          :title="authStore.isLogin ? '用户菜单' : '登录'"
+        >
           <img alt="user" class="user-icon" src="@assets/icon_user.svg" />
           <!-- 已登录状态指示器 -->
           <div v-if="authStore.isLogin" class="login-indicator"></div>
@@ -113,28 +420,22 @@ const componentMap: Record<string, any> = {
           <div class="nav-section">
             <ul class="nav-menu">
               <li
-                :class="['nav-item', { active: activeComponent === 'GameData' }]"
+                :class="['nav-item', { 'nav-item-active': activeComponent === 'GameData' }]"
                 @click="switchComponent('GameData')"
               >
                 游戏数据
               </li>
               <li
-                :class="['nav-item', { active: activeComponent === 'Recruit' }]"
+                :class="['nav-item', { 'nav-item-active': activeComponent === 'Recruit' }]"
                 @click="switchComponent('Recruit')"
               >
                 公招计算
               </li>
               <li
-                :class="['nav-item', { active: activeComponent === 'Material' }]"
+                :class="['nav-item', { 'nav-item-active': activeComponent === 'Material' }]"
                 @click="switchComponent('Material')"
               >
                 材料计算
-              </li>
-              <li
-                :class="['nav-item', { active: activeComponent === 'HeadhuntingRecord' }]"
-                @click="switchComponent('HeadhuntingRecord')"
-              >
-                寻访记录
               </li>
             </ul>
           </div>
@@ -159,8 +460,8 @@ const componentMap: Record<string, any> = {
   </div>
 </template>
 
-<style>
-/* 重置默认样式 */
+<style scoped>
+/* ==================== 全局样式重置 ==================== */
 * {
   margin: 0;
   padding: 0;
@@ -172,24 +473,85 @@ const componentMap: Record<string, any> = {
   display: none;
 }
 
-/* 移除这里的 body 字体设置，使用全局 CSS 的设置 */
 body {
   background: #1a1a1a;
   color: white;
   overflow: hidden;
-  /* 不设置 font-family，让全局 CSS 生效 */
-  -ms-overflow-style: none; /* IE and Edge */
-  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }
 
+/* ==================== 应用容器样式 ==================== */
 .app-container {
   height: 100vh;
   display: flex;
   flex-direction: column;
   position: relative;
+  user-select: none;
 }
 
-/* 顶部 Header */
+/* ==================== 全局右键菜单样式 ==================== */
+.context-menu {
+  position: fixed;
+  background: #2d2d2d;
+  border: 1px solid #404040;
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+  z-index: 10000;
+  min-width: 150px;
+  padding: 8px;
+  animation: contextMenuSlideIn 0.15s ease-out;
+  backdrop-filter: blur(10px);
+}
+
+.context-menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 12px 16px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: #ccc;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 14px;
+  font-family: inherit;
+}
+
+.context-menu-item:hover:not(:disabled) {
+  background: #646cff;
+  color: white;
+}
+
+.context-menu-item:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.context-menu-item.refreshing {
+  background: #ffa500;
+  color: white;
+}
+
+.context-menu-text {
+  text-align: center;
+}
+
+/* 右键菜单进入动画 */
+@keyframes contextMenuSlideIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(-5px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* ==================== 顶部 Header 样式 ==================== */
 .app-header {
   height: 50px;
   background: #2d2d2d;
@@ -204,15 +566,15 @@ body {
 
 .header-left {
   display: flex;
-  align-items: center; /* 确保垂直居中对齐 */
+  align-items: center;
   gap: 12px;
 }
 
 .logo {
   height: 30px;
   width: 30px;
-  filter: brightness(0) invert(1); /* 将图标变为白色 */
-  display: block; /* 确保图片正确显示 */
+  filter: brightness(0) invert(1);
+  display: block;
 }
 
 .app-header h1 {
@@ -220,9 +582,9 @@ body {
   font-weight: 600;
   color: white;
   margin: 0;
-  line-height: 1; /* 移除行高影响 */
+  line-height: 1;
   display: flex;
-  align-items: center; /* 垂直居中 */
+  align-items: center;
 }
 
 .header-right {
@@ -231,7 +593,7 @@ body {
   position: relative;
 }
 
-/* 用户图标按钮 */
+/* ==================== 用户图标按钮样式 ==================== */
 .user-icon-btn {
   background: none;
   border: none;
@@ -246,18 +608,18 @@ body {
 }
 
 .user-icon-btn:hover {
-  background: transparent; /* 移除背景色变化 */
+  background: transparent;
 }
 
 .user-icon {
   height: 24px;
   width: 24px;
-  filter: brightness(0) invert(0.6); /* 默认灰色 */
+  filter: brightness(0) invert(0.6);
   transition: filter 0.3s ease;
 }
 
 .user-icon-btn:hover .user-icon {
-  filter: brightness(0) saturate(100%) invert(42%) sepia(91%) saturate(1352%) hue-rotate(202deg) brightness(97%) contrast(89%); /* 悬停时变为与侧边栏相同的蓝色 */
+  filter: brightness(0) saturate(100%) invert(42%) sepia(91%) saturate(1352%) hue-rotate(202deg) brightness(97%) contrast(89%);
 }
 
 /* 已登录状态指示器 */
@@ -272,7 +634,7 @@ body {
   border: 1px solid #2d2d2d;
 }
 
-/* 用户下拉菜单 */
+/* ==================== 用户下拉菜单样式 ==================== */
 .user-dropdown-menu {
   position: absolute;
   top: 100%;
@@ -321,7 +683,7 @@ body {
 
 .menu-item:hover {
   background: #3a3a3a;
-  color: #4a90e2; /* 悬停时文字变为蓝色 */
+  color: #4a90e2;
 }
 
 .menu-item.logout:hover {
@@ -334,14 +696,14 @@ body {
   margin: 4px 0;
 }
 
-/* 主要内容布局 */
+/* ==================== 主要内容布局样式 ==================== */
 .main-layout {
   display: flex;
   flex: 1;
   overflow: hidden;
 }
 
-/* 侧边栏 */
+/* ==================== 侧边栏样式 ==================== */
 .sidebar {
   width: 150px;
   background: #2d2d2d;
@@ -351,20 +713,19 @@ body {
   flex-direction: column;
   gap: 24px;
   overflow-y: auto;
-  -ms-overflow-style: none; /* IE and Edge */
-  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }
 
 .sidebar::-webkit-scrollbar {
-  display: none; /* Chrome, Safari, Opera */
+  display: none;
 }
 
-/* 导航菜单 */
+/* ==================== 导航菜单样式 ==================== */
 .navigation {
   flex: 1;
 }
 
-/* 移除 nav-title 相关的样式，因为已经删除了这个元素 */
 .nav-menu {
   list-style: none;
   margin: 0;
@@ -383,31 +744,26 @@ body {
 
 .nav-item:hover {
   background: #3a3a3a;
-  color: #4a90e2; /* 悬停时文字变为蓝色 */
+  color: #4a90e2;
 }
 
-.nav-item.active {
-  background: #4a90e2; /* 侧边栏激活状态的蓝色 */
+.nav-item-active {
+  background: #4a90e2;
   color: white;
   font-weight: 500;
 }
 
-/* 主内容区 */
+/* ==================== 主内容区样式 ==================== */
 .main-content {
   flex: 1;
   padding: 20px;
   overflow-y: auto;
-  background: #1a1a1a;
-  background-image: url('@assets/6x6dotspace.png');
-  background-repeat: repeat;
-  background-size: auto;
-  background-position: 0 0;
-  background-attachment: local;
-  -ms-overflow-style: none; /* IE and Edge */
-  scrollbar-width: none; /* Firefox */
+  background: #1a1a1a url('@assets/6x6dotspace.png') repeat local 0 0 / auto;
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }
 
 .main-content::-webkit-scrollbar {
-  display: none; /* Chrome, Safari, Opera */
+  display: none;
 }
 </style>
