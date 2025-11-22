@@ -1,6 +1,5 @@
 <template>
   <div class="setting-container">
-    <h2>系统设置</h2>
 
     <div class="setting-content">
       <!-- 用户信息展示 -->
@@ -239,7 +238,7 @@ const lastLogTime = computed(() => {
 
 /**
  * 高可靠性的复制到剪贴板函数
- * 结合多种方法确保复制成功
+ * 使用现代 Clipboard API，移除弃用的 execCommand
  */
 const copyToClipboard = async (text: string, itemName: string = '内容'): Promise<boolean> => {
   if (!text || text.trim() === '') {
@@ -259,12 +258,12 @@ const copyToClipboard = async (text: string, itemName: string = '内容'): Promi
     }
   }
 
-  // 方法2: 使用textarea元素和execCommand（兼容方案）
+  // 方法2: 使用备选方案 - 创建临时textarea让用户手动复制
   try {
     const textArea = document.createElement('textarea')
     textArea.value = text
 
-    // 确保元素在视口外但可聚焦
+    // 设置样式确保元素不可见但可选择
     textArea.style.position = 'fixed'
     textArea.style.top = '0'
     textArea.style.left = '0'
@@ -277,75 +276,28 @@ const copyToClipboard = async (text: string, itemName: string = '内容'): Promi
     textArea.style.background = 'transparent'
     textArea.style.opacity = '0'
     textArea.style.zIndex = '-1'
+    textArea.style.pointerEvents = 'none'
 
     document.body.appendChild(textArea)
 
-    // 选择文本 - 使用更兼容的方式
+    // 选择文本
     textArea.focus()
     textArea.select()
+    textArea.setSelectionRange(0, textArea.value.length)
 
-    // 尝试使用setSelectionRange作为备选
-    try {
-      textArea.setSelectionRange(0, textArea.value.length)
-    } catch (e) {
-      console.warn('setSelectionRange失败:', e)
-    }
+    // 在现代浏览器中，用户可以通过快捷键复制已选择的文本
+    console.log(`📋 ${itemName}已自动选择，请使用Ctrl+C手动复制`)
 
-    // 执行复制命令
-    const successful = document.execCommand('copy')
-    document.body.removeChild(textArea)
+    // 短暂显示后移除元素
+    setTimeout(() => {
+      document.body.removeChild(textArea)
+    }, 1000)
 
-    if (successful) {
-      console.log(`✅ 使用execCommand复制${itemName}成功`)
-      return true
-    } else {
-      console.warn(`❌ 使用execCommand复制${itemName}失败`)
-      return false
-    }
+    return false // 返回false表示需要用户手动操作
   } catch (error) {
-    console.error(`execCommand复制失败:`, error)
-    // 继续尝试最后的方法
+    console.error(`备选复制方案失败:`, error)
+    return false
   }
-
-  // 方法3: 使用contenteditable div作为最后手段
-  try {
-    const div = document.createElement('div')
-    div.contentEditable = 'true'
-    div.textContent = text
-    div.style.position = 'fixed'
-    div.style.top = '0'
-    div.style.left = '0'
-    div.style.opacity = '0'
-    div.style.zIndex = '-1'
-
-    document.body.appendChild(div)
-
-    // 选择div内容
-    const range = document.createRange()
-    range.selectNodeContents(div)
-    const selection = window.getSelection()
-    if (selection) {
-      selection.removeAllRanges()
-      selection.addRange(range)
-    }
-
-    // 尝试复制
-    const successful = document.execCommand('copy')
-    if (selection) {
-      selection.removeAllRanges()
-    }
-    document.body.removeChild(div)
-
-    if (successful) {
-      console.log(`✅ 使用contenteditable复制${itemName}成功`)
-      return true
-    }
-  } catch (error) {
-    console.error(`contenteditable复制失败:`, error)
-  }
-
-  console.error(`❌ 所有复制方法都失败了`)
-  return false
 }
 
 /**
@@ -359,7 +311,7 @@ const forceCopyToClipboard = async (text: string, itemName: string = '内容'): 
     return true
   }
 
-  // 如果常规复制失败，提供手动复制选项
+  // 如果现代方法失败，提供手动复制选项
   console.log(`常规复制失败，提供手动复制选项`)
 
   // 对于短文本，直接显示在提示中让用户手动复制
@@ -387,7 +339,7 @@ const forceCopyToClipboard = async (text: string, itemName: string = '内容'): 
  */
 const handleCopyUid = async () => {
   const uid = gameDataStore.gameUid
-  if (!uid || uid === '未获取') {
+  if (!uid || uid === '??') {
     showError('UID不可用，无法复制')
     return
   }
@@ -413,7 +365,7 @@ const handleCopyUid = async () => {
  */
 const copyNickname = async () => {
   const nickname = authStore.userName
-  if (!nickname || nickname === '未获取' || nickname === '未知用户') {
+  if (!nickname || nickname === '??' || nickname === '未知用户') {
     showError('昵称不可用，无法复制')
     return
   }
@@ -681,8 +633,8 @@ onMounted(() => {
 .user-card {
   display: flex;
   align-items: center;
-  gap: 15px;
-  padding: 15px;
+  gap: 20px; /* 增加间距 */
+  padding: 20px; /* 增加内边距 */
   background: #3a3a3a;
   border-radius: 6px;
   border: 1px solid #4a4a4a;
@@ -713,15 +665,18 @@ onMounted(() => {
 
 .user-details {
   flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px; /* 增加元素间距 */
 }
 
 .user-name {
   font-weight: 600;
   color: #fff;
-  margin-bottom: 4px;
   font-size: 16px;
   cursor: pointer;
   transition: color 0.2s ease;
+  margin-bottom: 4px; /* 增加底部间距 */
 }
 
 .user-name:hover {
@@ -731,7 +686,7 @@ onMounted(() => {
 .user-level, .user-uid, .login-status {
   color: #ccc;
   font-size: 12px;
-  margin-bottom: 2px;
+  line-height: 1.4; /* 增加行高 */
 }
 
 /* UID复制样式 */
@@ -743,6 +698,7 @@ onMounted(() => {
   transition: all 0.2s ease;
   border: 1px solid transparent;
   user-select: none;
+  margin-left: 4px; /* 增加左边距 */
 }
 
 .uid-value.copyable:hover {
@@ -791,7 +747,7 @@ onMounted(() => {
 .label {
   font-size: 12px;
   color: #999;
-  margin-bottom: 4px;
+  margin-bottom: 6px; /* 增加标签和值的间距 */
   font-weight: 500;
 }
 
@@ -1318,10 +1274,12 @@ onMounted(() => {
   .user-card {
     flex-direction: column;
     text-align: center;
+    gap: 15px; /* 移动端也保持适当间距 */
   }
 
   .user-details {
     width: 100%;
+    gap: 6px; /* 移动端稍微减少间距 */
   }
 
   .data-grid {

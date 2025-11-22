@@ -396,16 +396,8 @@ onUnmounted(() => {
             <span class="sub-value" v-else-if="gameDataStore.getActualApInfo">已回满</span>
           </li>
           <li class="data-item">
-            <span class="label">公开招募</span>
-            <span class="value">{{ gameDataStore.getHireSlotCount || '--' }}</span>
-          </li>
-          <li class="data-item">
-            <span class="label">公招刷新次数</span>
-            <span class="value">{{ gameDataStore.getHireRefreshCount || '--' }}</span>
-          </li>
-          <li class="data-item training-item">
-            <span class="label">训练室</span>
-            <span class="value training-value">{{ gameDataStore.getTrainingSimpleStatus || '--' }}</span>
+            <span class="label">剿灭作战</span>
+            <span class="value">{{ gameDataStore.getCampaignReward || '--' }} 合成玉</span>
           </li>
           <li class="data-item">
             <span class="label">每日任务</span>
@@ -422,6 +414,14 @@ onUnmounted(() => {
           <li class="data-item">
             <span class="label">数据增补条</span>
             <span class="value">{{ gameDataStore.getTowerHigherItem || '--' }}</span>
+          </li>
+          <li class="data-item">
+            <span class="label">公开招募</span>
+            <span class="value">{{ gameDataStore.getHireSlotCount || '--' }}</span>
+          </li>
+          <li class="data-item">
+            <span class="label">公招刷新次数</span>
+            <span class="value">{{ gameDataStore.getHireRefreshCount || '--' }}</span>
           </li>
         </ul>
       </div>
@@ -493,6 +493,10 @@ onUnmounted(() => {
             </span>
             <span class="sub-value" v-else-if="gameDataStore.getLaborCount">已回满</span>
           </li>
+          <li class="data-item training-item">
+            <span class="label">训练室</span>
+            <span class="value training-value">{{ gameDataStore.getTrainingSimpleStatus || '--' }}</span>
+          </li>
         </ul>
       </div>
 
@@ -500,10 +504,6 @@ onUnmounted(() => {
       <div class="section-card" v-if="authStore.isLogin">
         <h3 class="section-title">--- 游戏战绩 ---</h3>
         <ul class="data-grid">
-          <li class="data-item">
-            <span class="label">剿灭作战</span>
-            <span class="value">{{ gameDataStore.getCampaignReward || '--' }} 合成玉</span>
-          </li>
           <li class="data-item">
             <span class="label">集成战略</span>
             <span class="value">{{ gameDataStore.getRelicCount || '--' }} 收藏品</span>
