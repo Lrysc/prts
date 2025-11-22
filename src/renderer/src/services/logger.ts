@@ -62,7 +62,7 @@ class LoggerService {
    */
   private readonly APP_INFO = {
     name: 'PRTS系统助手',
-    version: '0.2.5'
+    version: '0.2.6.1'
   };
 
   /**

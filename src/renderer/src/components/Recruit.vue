@@ -303,7 +303,7 @@ onMounted(() => {
     <div v-if="recruitData && !isLoading">
       <div class="version-info">
         <span>数据版本: {{ recruitData.update.version }} ({{ recruitData.update.date }})</span>
-        <span>数据来源：Godot</span>
+        <span>数据来源：blueskybone</span>
         <span class="new-operators" v-if="recruitData.new_ope.name.length > 0">
           新增干员: {{ recruitData.new_ope.name.join('、') }}
         </span>
