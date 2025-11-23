@@ -5,11 +5,140 @@ import { useAuthStore } from '@stores/auth';
 import { showSuccess, showError } from '@services/toastService';
 import { logger } from '@services/logger';
 
+// ========== 类型定义 ==========
+
+interface ApInfo {
+  current: number;
+  max: number;
+  remainSecs: number;
+  recoverTime: number;
+}
+
+interface TrainingInfo {
+  isNull: boolean;
+  traineeIsNull: boolean;
+  trainerIsNull: boolean;
+  status: number;
+  remainSecs: number;
+  completeTime: number;
+  trainee: string;
+  trainer: string;
+  profession: string;
+  targetSkill: number;
+  totalPoint: number;
+  remainPoint: number;
+  changeRemainSecsIrene: number;
+  changeTimeIrene: number;
+  changeRemainSecsLogos: number;
+  changeTimeLogos: number;
+}
+
+interface RecruitInfo {
+  isNull: boolean;
+  max: number;
+  complete: number;
+  remainSecs: number;
+  completeTime: number;
+}
+
+interface HireInfo {
+  isNull: boolean;
+  count: number;
+  max: number;
+  remainSecs: number;
+  completeTime: number;
+}
+
+interface TradingStation {
+  strategy: string;
+  max: number;
+  current: number;
+  completeTime: number;
+  remainSecs: number;
+}
+
+interface TradingsInfo {
+  isNull: boolean;
+  current: number;
+  max: number;
+  remainSecs: number;
+  completeTime: number;
+  tradings: TradingStation[];
+}
+
+interface ManufactureStation {
+  formula: string;
+  max: number;
+  current: number;
+  completeTime: number;
+  remainSecs: number;
+}
+
+interface ManufacturesInfo {
+  isNull: boolean;
+  current: number;
+  max: number;
+  remainSecs: number;
+  completeTime: number;
+  manufactures: ManufactureStation[];
+}
+
+interface LaborInfo {
+  current: number;
+  max: number;
+  remainSecs: number;
+  recoverTime: number;
+}
+
+interface DormitoriesInfo {
+  isNull: boolean;
+  current: number;
+  max: number;
+}
+
+interface TiredInfo {
+  current: number;
+  remainSecs: number;
+}
+
+interface RecruitSlot {
+  slotIndex: number;
+  state: number;
+  status: string;
+  startTime: string;
+  finishTime: string;
+  startTs: number;
+  finishTs: number;
+}
+
+interface TradingDetail {
+  stationIndex: number;
+  strategy: string;
+  strategyName: string;
+  current: number;
+  max: number;
+  progress: number;
+  remainSecs: number;
+  remainingTime: string;
+  completeTime: string;
+}
+
+interface ManufactureDetail {
+  stationIndex: number;
+  formula: string;
+  current: number;
+  max: number;
+  progress: number;
+  remainSecs: number;
+  remainingTime: string;
+  completeTime: string;
+}
+
 /**
  * 游戏数据状态管理Store
  * 负责玩家游戏数据的获取、缓存和状态管理
  * 包含理智计算、任务进度、基建状态等核心功能
- * 新增用户头像、UID复制等设置相关功能
+ * 基于Kotlin代码逻辑完整实现各项功能
  */
 export const useGameDataStore = defineStore('gameData', () => {
   // ========== 状态定义 ==========
@@ -48,7 +177,7 @@ export const useGameDataStore = defineStore('gameData', () => {
    * @returns 格式化的日期时间字符串
    */
   const formatTimestamp = (ts?: number): string => {
-    if (!ts) return '未知';
+    if (!ts || ts <= 0) return '未知';
     return new Date(ts * 1000).toLocaleString('zh-CN', {
       year: 'numeric',
       month: '2-digit',
@@ -59,12 +188,50 @@ export const useGameDataStore = defineStore('gameData', () => {
   };
 
   /**
+   * 从秒数格式化恢复时间
+   * 将秒数转换为易读的时间格式（小时和分钟）
+   * @param seconds - 剩余秒数
+   * @returns 格式化的时间字符串
+   */
+  const formatRecoveryTimeFromSeconds = (seconds: number): string => {
+    if (!seconds || seconds <= 0) return '已完成';
+
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+
+    if (hours > 0) return `${hours}小时${minutes}分钟`;
+    return `${minutes}分钟`;
+  };
+
+  /**
+   * 格式化理智恢复时间
+   * 将秒数转换为易读的时间格式
+   * @param recoveryTs - 恢复完成时间戳（秒级）
+   * @returns 格式化的时间字符串（如"2小时30分钟"）
+   */
+  const formatRecoveryTime = (recoveryTs?: number): string => {
+    if (!recoveryTs || recoveryTs <= 0) return '已回满';
+    const now = getCurrentTimestamp();
+    const diff = recoveryTs - now;
+
+    if (diff <= 0) return '已回满';
+
+    const hours = Math.floor(diff / 3600);
+    const minutes = Math.floor((diff % 3600) / 60);
+
+    if (hours > 0) return `${hours}小时${minutes}分钟`;
+    return `${minutes}分钟`;
+  };
+
+  // ========== 基于Kotlin代码的核心计算逻辑 ==========
+
+  /**
    * 计算实际理智数值 - 基于Kotlin代码逻辑
    * 根据恢复时间动态计算当前实际理智值
    * @param apData - 理智数据对象
    * @returns 包含当前理智、最大理智、剩余恢复时间等信息的对象
    */
-  const calculateActualAp = (apData: any) => {
+  const calculateActualAp = (apData: any): ApInfo => {
     if (!apData) return { current: 0, max: 0, remainSecs: -1, recoverTime: -1 };
 
     const currentTs = getCurrentTimestamp();
@@ -104,53 +271,512 @@ export const useGameDataStore = defineStore('gameData', () => {
   };
 
   /**
-   * 格式化理智恢复时间
-   * 将秒数转换为易读的时间格式
-   * @param recoveryTs - 恢复完成时间戳（秒级）
-   * @returns 格式化的时间字符串（如"2小时30分钟"）
+   * 计算训练室信息 - 基于Kotlin代码逻辑
+   * @param training - 训练室数据
+   * @param charInfoMap - 角色信息映射表
+   * @returns 训练室详细信息
    */
-  const formatRecoveryTime = (recoveryTs?: number): string => {
-    if (!recoveryTs || recoveryTs <= 0) return '已回满';
-    const now = getCurrentTimestamp();
-    const diff = recoveryTs - now;
+  const calculateTrainingInfo = (training: any, charInfoMap: any): TrainingInfo => {
+    if (!training) {
+      return {
+        isNull: true,
+        traineeIsNull: true,
+        trainerIsNull: true,
+        status: -1,
+        remainSecs: -1,
+        completeTime: -1,
+        trainee: '',
+        trainer: '',
+        profession: '',
+        targetSkill: 0,
+        totalPoint: 1,
+        remainPoint: 1,
+        changeRemainSecsIrene: -1,
+        changeTimeIrene: -1,
+        changeRemainSecsLogos: -1,
+        changeTimeLogos: -1
+      };
+    }
 
-    if (diff <= 0) return '已回满';
+    const currentTs = getCurrentTimestamp();
+    const result: TrainingInfo = {
+      isNull: false,
+      traineeIsNull: !training.trainee,
+      trainerIsNull: !training.trainer,
+      status: -1,
+      remainSecs: training.remainSecs || -1,
+      completeTime: -1,
+      trainee: '',
+      trainer: '',
+      profession: '',
+      targetSkill: 0,
+      totalPoint: 1,
+      remainPoint: 1,
+      changeRemainSecsIrene: -1,
+      changeTimeIrene: -1,
+      changeRemainSecsLogos: -1,
+      changeTimeLogos: -1
+    };
 
-    const hours = Math.floor(diff / 3600);
-    const minutes = Math.floor((diff % 3600) / 60);
+    // 处理训练干员信息
+    if (training.trainee && training.trainee.charId) {
+      const charInfo = charInfoMap?.[training.trainee.charId];
+      if (charInfo) {
+        result.trainee = charInfo.name;
+        result.profession = charInfo.profession;
+        result.targetSkill = (training.trainee.targetSkill || 0) + 1;
+      }
+    }
 
-    if (hours > 0) return `${hours}小时${minutes}分钟`;
-    return `${minutes}分钟`;
+    // 处理协助者信息
+    if (training.trainer && training.trainer.charId) {
+      const charInfo = charInfoMap?.[training.trainer.charId];
+      if (charInfo) {
+        result.trainer = charInfo.name;
+      }
+    }
+
+    // 处理训练状态
+    if (training.remainSecs !== undefined && training.remainSecs !== null) {
+      result.remainSecs = training.remainSecs;
+      result.completeTime = training.remainSecs + currentTs;
+
+      if (training.remainSecs === 0) {
+        // 专精完成
+        result.status = 0;
+        result.totalPoint = 1;
+        result.remainPoint = 0;
+      } else if (training.remainSecs === -1) {
+        // 空闲中
+        result.status = -1;
+        result.totalPoint = 1;
+        result.remainPoint = 1;
+      } else {
+        // 训练中
+        result.status = 1;
+
+        if (training.speed) {
+          result.remainPoint = Math.floor(training.remainSecs * training.speed);
+          const totalPointCalc = Math.floor(
+            ((currentTs - (training.lastUpdateTime || currentTs)) * training.speed) + result.remainPoint
+          );
+          result.totalPoint = getTotalPoint(totalPointCalc);
+
+          // 计算Irene和Logos转换时间点
+          const targetPointIrene = (result.profession === "SNIPER" || result.profession === "WARRIOR") ? 24300 : 18900;
+          const targetPointLogos = (result.profession === "CASTER" || result.profession === "SUPPORT") ? 24300 : 18900;
+
+          if (result.remainPoint > targetPointIrene) {
+            const secs = (result.remainPoint - targetPointIrene) / training.speed;
+            result.changeRemainSecsIrene = Math.floor(secs);
+            result.changeTimeIrene = currentTs + Math.floor(secs);
+          }
+
+          if (result.remainPoint > targetPointLogos) {
+            const secs = (result.remainPoint - targetPointLogos) / training.speed;
+            result.changeRemainSecsLogos = Math.floor(secs);
+            result.changeTimeLogos = currentTs + Math.floor(secs);
+          }
+        }
+      }
+    }
+
+    return result;
   };
 
   /**
-   * 格式化任务进度（已完成/总数）
-   * 根据实际数据结构使用 current/total 字段
+   * 计算公开招募信息 - 基于Kotlin代码逻辑
+   * @param recruitNode - 公开招募数据数组
+   * @returns 公开招募详细信息
    */
-  const formatTaskProgress = (task?: any): string => {
-    if (!task) return '0/0';
+  const calculateRecruitInfo = (recruitNode: any[]): RecruitInfo => {
+    if (!recruitNode || !Array.isArray(recruitNode)) {
+      return {
+        isNull: true,
+        max: 0,
+        complete: 0,
+        remainSecs: -1,
+        completeTime: -1
+      };
+    }
 
-    // 根据实际数据结构，使用 current/total 字段
-    const completed = task.current || 0;
-    const total = task.total || 0;
+    const currentTs = getCurrentTimestamp();
+    let unable = 0;
+    let complete = 0;
+    let maxFinishTs = -1;
 
-    return `${completed}/${total}`;
+    recruitNode.forEach(node => {
+      switch (node.state) {
+        case 0: // 无法招募
+          unable++;
+          break;
+        case 3: // 招募完成
+          complete++;
+          break;
+        case 2: // 招募中
+          if (node.finishTs) {
+            if (node.finishTs < currentTs) {
+              complete++;
+            }
+            maxFinishTs = Math.max(maxFinishTs, node.finishTs);
+          }
+          break;
+      }
+    });
+
+    const max = 4 - unable;
+    let remainSecs = -1;
+    let completeTime = -1;
+
+    if (maxFinishTs !== -1 && maxFinishTs > currentTs) {
+      remainSecs = maxFinishTs - currentTs;
+      completeTime = maxFinishTs;
+    }
+
+    return {
+      isNull: false,
+      max,
+      complete,
+      remainSecs,
+      completeTime
+    };
   };
 
   /**
-   * 从秒数格式化恢复时间
-   * 将秒数转换为易读的时间格式（小时和分钟）
-   * @param seconds - 剩余秒数
-   * @returns 格式化的时间字符串
+   * 计算公招刷新次数信息 - 基于Kotlin代码逻辑
+   * @param hireNode - 公招数据
+   * @returns 公招刷新次数信息
    */
-  const formatRecoveryTimeFromSeconds = (seconds: number): string => {
-    if (!seconds || seconds <= 0) return '已回满';
+  const calculateHireInfo = (hireNode: any): HireInfo => {
+    if (!hireNode) {
+      return {
+        isNull: true,
+        count: 0,
+        max: 3,
+        remainSecs: -1,
+        completeTime: -1
+      };
+    }
 
-    const hours = Math.floor(seconds / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
+    const currentTs = getCurrentTimestamp();
+    const remainSecs = hireNode.completeWorkTime - currentTs;
 
-    if (hours > 0) return `${hours}小时${minutes}分钟`;
-    return `${minutes}分钟`;
+    let count = 0;
+    let completeTime = -1;
+
+    if (remainSecs < 0) {
+      completeTime = -1;
+      count = Math.min(hireNode.refreshCount + 1, 3);
+    } else {
+      completeTime = hireNode.completeWorkTime;
+      count = hireNode.refreshCount;
+    }
+
+    return {
+      isNull: false,
+      count,
+      max: 3,
+      remainSecs: remainSecs < 0 ? -1 : remainSecs,
+      completeTime
+    };
+  };
+
+  /**
+   * 计算贸易站信息 - 基于Kotlin代码逻辑
+   * @param tradingsNode - 贸易站数据数组
+   * @returns 贸易站详细信息
+   */
+  const calculateTradingsInfo = (tradingsNode: any[]): TradingsInfo => {
+    if (!tradingsNode || !Array.isArray(tradingsNode)) {
+      return {
+        isNull: true,
+        current: 0,
+        max: 0,
+        remainSecs: -1,
+        completeTime: -1,
+        tradings: []
+      };
+    }
+
+    const currentTs = getCurrentTimestamp();
+    let stockSum = 0;
+    let stockLimitSum = 0;
+    let completeTimeAll = -1;
+    let remainSecsAll = -1;
+    const tradings: TradingStation[] = [];
+
+    tradingsNode.forEach(node => {
+      const strategy = node.strategy;
+      const max = node.stockLimit;
+      const targetPoint = strategy === "O_GOLD" ? 7000 : 4000;
+
+      // 计算生成的货物数量 - 修复冗余的 0 + geneStock
+      const geneStock = Math.floor((node.completeWorkTime - node.lastUpdateTime) / targetPoint);
+      let stock = (node.stock?.length || 0) + geneStock;
+
+      if (geneStock > 0 && currentTs < node.completeWorkTime) {
+        stock--;
+      } else {
+        const newStock = Math.floor((currentTs - node.completeWorkTime) / targetPoint);
+        stock += newStock + 1;
+      }
+
+      if (stock > max) {
+        stock = max;
+      }
+
+      let completeTime = -1;
+      let remainSecs = -1;
+
+      if (stock < max) {
+        const restStock = max - stock;
+        if (currentTs < node.completeWorkTime) {
+          remainSecs = restStock * targetPoint + node.completeWorkTime - currentTs;
+          completeTime = currentTs + remainSecs;
+        } else {
+          completeTime = (max - ((node.stock?.length || 0) + geneStock)) * targetPoint + node.completeWorkTime;
+          remainSecs = completeTime - currentTs;
+        }
+      }
+
+      tradings.push({
+        strategy,
+        max,
+        current: stock,
+        completeTime,
+        remainSecs
+      });
+
+      stockSum += stock;
+      stockLimitSum += max;
+      completeTimeAll = Math.max(completeTimeAll, completeTime);
+      remainSecsAll = Math.max(remainSecsAll, remainSecs);
+    });
+
+    return {
+      isNull: false,
+      current: stockSum,
+      max: stockLimitSum,
+      remainSecs: remainSecsAll,
+      completeTime: completeTimeAll,
+      tradings
+    };
+  };
+
+  /**
+   * 计算制造站信息 - 基于Kotlin代码逻辑
+   * @param manufacturesNode - 制造站数据数组
+   * @param formulaMap - 制造配方信息映射表
+   * @returns 制造站详细信息
+   */
+  const calculateManufacturesInfo = (manufacturesNode: any[], formulaMap: any): ManufacturesInfo => {
+    if (!manufacturesNode || !Array.isArray(manufacturesNode)) {
+      return {
+        isNull: true,
+        current: 0,
+        max: 0,
+        remainSecs: -1,
+        completeTime: -1,
+        manufactures: []
+      };
+    }
+
+    const currentTs = getCurrentTimestamp();
+    let stockSum = 0;
+    let stockLimitSum = 0;
+    let completeTimeAll = -1;
+    let remainSecsAll = -1;
+    const manufactures: ManufactureStation[] = [];
+
+    manufacturesNode.forEach(node => {
+      const formula = node.formulaId;
+      const weight = formulaMap?.[node.formulaId]?.weight || 1;
+      const stockLimit = Math.floor(node.capacity / weight);
+      const max = stockLimit;
+
+      let stock = node.complete || 0;
+      let completeTime = -1;
+      let remainSecs = -1;
+
+      if (currentTs >= node.completeWorkTime) {
+        stock = stockLimit;
+      } else {
+        const timeRatio = (node.completeWorkTime - node.lastUpdateTime) / (stockLimit - stock);
+        stock += Math.floor((currentTs - node.lastUpdateTime) / timeRatio);
+        completeTime = node.completeWorkTime;
+        remainSecs = node.completeWorkTime - currentTs;
+      }
+
+      manufactures.push({
+        formula,
+        max,
+        current: stock,
+        completeTime,
+        remainSecs
+      });
+
+      stockLimitSum += stockLimit;
+      stockSum += stock;
+      completeTimeAll = Math.max(completeTimeAll, completeTime);
+      remainSecsAll = Math.max(remainSecsAll, remainSecs);
+    });
+
+    return {
+      isNull: false,
+      current: stockSum,
+      max: stockLimitSum,
+      remainSecs: remainSecsAll,
+      completeTime: completeTimeAll,
+      manufactures
+    };
+  };
+
+  /**
+   * 计算无人机信息 - 基于Kotlin代码逻辑
+   */
+  const calculateLaborInfo = (labor: any): LaborInfo => {
+    if (!labor) {
+      return {
+        current: 0,
+        max: 0,
+        remainSecs: -1,
+        recoverTime: -1
+      };
+    }
+
+    const currentTs = getCurrentTimestamp();
+    const max = labor.maxValue || labor.max || 0;
+    const laborRemain = labor.remainSecs - (currentTs - labor.lastUpdateTime);
+
+    // 计算当前无人机数量
+    let current = 0;
+    if (labor.remainSecs === 0) {
+      current = labor.value || labor.current || 0;
+    } else {
+      current = Math.min(
+        max,
+        Math.floor(
+          ((currentTs - labor.lastUpdateTime) * (max - (labor.value || labor.current || 0)) /
+            labor.remainSecs + (labor.value || labor.current || 0))
+        )
+      );
+    }
+
+    const remainSecs = laborRemain < 0 ? 0 : laborRemain;
+    const recoverTime = labor.remainSecs + labor.lastUpdateTime;
+
+    return {
+      current,
+      max,
+      remainSecs,
+      recoverTime
+    };
+  };
+
+  /**
+   * 计算宿舍信息 - 基于Kotlin代码逻辑
+   */
+  const calculateDormitoriesInfo = (dormitoriesNode: any[]): DormitoriesInfo => {
+    if (!dormitoriesNode || !Array.isArray(dormitoriesNode)) {
+      return {
+        isNull: true,
+        current: 0,
+        max: 0
+      };
+    }
+
+    const currentTs = getCurrentTimestamp();
+    let max = 0;
+    let value = 0;
+
+    dormitoriesNode.forEach(node => {
+      const chars = node.chars || [];
+      const speed = node.level * 0.1 + 1.5 + (node.comfort || 0) / 2500.0;
+      max += chars.length;
+
+      chars.forEach((chr: any) => {
+        if (chr.ap === 8640000) {
+          value++;
+        } else {
+          const ap = ((currentTs - (chr.lastApAddTime || currentTs)) * speed * 100 + (chr.ap || 0));
+          if (ap >= 8640000) value++;
+        }
+      });
+    });
+
+    return {
+      isNull: false,
+      current: value,
+      max: max
+    };
+  };
+
+  /**
+   * 计算疲劳干员信息 - 基于Kotlin代码逻辑
+   */
+  const calculateTiredInfo = (building: any): TiredInfo => {
+    if (!building) {
+      return {
+        current: 0,
+        remainSecs: -1
+      };
+    }
+
+    const currentTs = getCurrentTimestamp();
+    let current = building.tiredChars?.length || 0;
+    let remainSecs = Number.MAX_SAFE_INTEGER;
+
+    // 收集所有在工作中的干员
+    const charList: any[] = [];
+
+    if (building.meeting?.chars) charList.push(...building.meeting.chars);
+    if (building.control?.chars) charList.push(...building.control.chars);
+    if (building.hire?.chars) charList.push(...building.hire.chars);
+    if (building.tradings) {
+      building.tradings.forEach((trading: any) => {
+        if (trading.chars) charList.push(...trading.chars);
+      });
+    }
+    if (building.manufactures) {
+      building.manufactures.forEach((manufacture: any) => {
+        if (manufacture.chars) charList.push(...manufacture.chars);
+      });
+    }
+    if (building.powers) {
+      building.powers.forEach((power: any) => {
+        if (power.chars) charList.push(...power.chars);
+      });
+    }
+
+    // 计算疲劳恢复时间
+    charList.forEach(char => {
+      if (char.workTime !== 0 && char.workTime !== undefined) {
+        const speed = (8640000 - (char.ap || 0)) / char.workTime;
+        const restTime = (char.ap || 0) / speed;
+
+        if ((currentTs - (char.lastApAddTime || currentTs)) > restTime) {
+          current++;
+        } else {
+          remainSecs = Math.min(remainSecs, Math.floor(restTime));
+        }
+      }
+    });
+
+    return {
+      current,
+      remainSecs: remainSecs === Number.MAX_SAFE_INTEGER ? -1 : remainSecs
+    };
+  };
+
+  /**
+   * 获取训练点数 - 基于Kotlin代码逻辑
+   */
+  const getTotalPoint = (computePoint: number): number => {
+    if (computePoint > 86400) return 86400;
+    if (computePoint > 57600) return 86400;
+    if (computePoint > 43200) return 57600;
+    if (computePoint > 28800) return 43200;
+    return 28800;
   };
 
   // ========== 设置相关功能 ==========
@@ -250,58 +876,56 @@ export const useGameDataStore = defineStore('gameData', () => {
    * @returns 复制是否成功的Promise
    */
   const copyToClipboard = async (text: string): Promise<boolean> => {
-    return logger.performanceAsync('复制到剪贴板', async () => {
-      try {
-        // 优先使用现代剪贴板API
-        if (navigator.clipboard && window.isSecureContext) {
-          await navigator.clipboard.writeText(text);
-          logger.debug('使用现代剪贴板API复制成功');
-          return true;
-        } else {
-          // 降级方案：使用textarea元素和现代选择API
-          const textArea = document.createElement('textarea');
-          textArea.value = text;
+    try {
+      // 优先使用现代剪贴板API
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text);
+        logger.debug('使用现代剪贴板API复制成功');
+        return true;
+      } else {
+        // 降级方案：使用textarea元素和现代选择API
+        const textArea = document.createElement('textarea');
+        textArea.value = text;
 
-          // 设置样式确保元素不可见
-          textArea.style.position = 'fixed';
-          textArea.style.top = '0';
-          textArea.style.left = '0';
-          textArea.style.width = '2em';
-          textArea.style.height = '2em';
-          textArea.style.padding = '0';
-          textArea.style.border = 'none';
-          textArea.style.outline = 'none';
-          textArea.style.boxShadow = 'none';
-          textArea.style.background = 'transparent';
-          textArea.style.opacity = '0';
+        // 设置样式确保元素不可见
+        textArea.style.position = 'fixed';
+        textArea.style.top = '0';
+        textArea.style.left = '0';
+        textArea.style.width = '2em';
+        textArea.style.height = '2em';
+        textArea.style.padding = '0';
+        textArea.style.border = 'none';
+        textArea.style.outline = 'none';
+        textArea.style.boxShadow = 'none';
+        textArea.style.background = 'transparent';
+        textArea.style.opacity = '0';
 
-          document.body.appendChild(textArea);
+        document.body.appendChild(textArea);
 
-          try {
-            // 使用现代选择API选择文本
-            textArea.select();
-            textArea.setSelectionRange(0, textArea.value.length);
+        try {
+          // 使用现代选择API选择文本
+          textArea.select();
+          textArea.setSelectionRange(0, textArea.value.length);
 
-            // 尝试使用现代剪贴板API
-            if (navigator.clipboard) {
-              await navigator.clipboard.writeText(text);
-              logger.debug('使用降级方案的剪贴板API复制成功');
-              return true;
-            } else {
-              // 如果现代API不可用，提示用户手动复制
-              logger.warn('剪贴板API不可用，需要用户手动复制');
-              return false;
-            }
-          } finally {
-            // 确保清理DOM元素
-            document.body.removeChild(textArea);
+          // 尝试使用现代剪贴板API
+          if (navigator.clipboard) {
+            await navigator.clipboard.writeText(text);
+            logger.debug('使用降级方案的剪贴板API复制成功');
+            return true;
+          } else {
+            // 如果现代API不可用，提示用户手动复制
+            logger.warn('剪贴板API不可用，需要用户手动复制');
+            return false;
           }
+        } finally {
+          // 确保清理DOM元素
+          document.body.removeChild(textArea);
         }
-      } catch (error) {
-        logger.error('复制到剪贴板失败', error);
-        return false;
       }
-    });
+    } catch (error) {
+      logger.error('复制到剪贴板失败', error);
+      return false;
+    }
   };
 
   /**
@@ -433,58 +1057,76 @@ export const useGameDataStore = defineStore('gameData', () => {
     return '未通关主线';
   });
 
+  // ========== 公开招募相关计算属性 ==========
+
   /**
-   * 获取公开招募刷新次数
-   * 显示当前刷新次数和最大次数（0/3）
+   * 获取公开招募完整信息 - 基于Kotlin计算逻辑
    */
-  const getHireRefreshCount = computed((): string => {
-    const refreshCount = playerData.value?.building?.hire?.refreshCount || 0;
-    return `${refreshCount}/3`;
+  const getRecruitInfo = computed((): RecruitInfo => {
+    const recruitData = playerData.value?.recruit;
+    return calculateRecruitInfo(recruitData);
   });
 
   /**
-   * 获取公开招募位置数量和状态
-   * 根据 recruit 数组计算总槽位和正在招募的槽位
-   * state: 1=空闲, 2=正在招募, 3=招募完成
+   * 获取公开招募刷新次数 - 基于Kotlin计算逻辑
+   */
+  const getHireInfo = computed((): HireInfo => {
+    const hireData = playerData.value?.building?.hire;
+    return calculateHireInfo(hireData);
+  });
+
+  /**
+   * 获取公开招募槽位状态显示
    */
   const getHireSlotCount = computed((): string => {
-    const recruit = playerData.value?.recruit;
+    const recruitInfo = getRecruitInfo.value;
+    if (recruitInfo.isNull) return '0/4';
 
-    if (!Array.isArray(recruit)) return '0/4';
+    return `${recruitInfo.complete}/${recruitInfo.max}`;
+  });
 
-    const totalSlots = recruit.length;
-    const activeSlots = recruit.filter(slot => slot.state === 3).length;
-
-    return `${activeSlots}/${totalSlots} ${activeSlots > 1 ? '招募中' : '空闲'}`;
+  /**
+   * 获取公开招募刷新次数显示
+   */
+  const getHireRefreshCount = computed((): string => {
+    const hireInfo = getHireInfo.value;
+    return `${hireInfo.count}/${hireInfo.max}`;
   });
 
   /**
    * 获取公开招募完成状态
-   * 显示已完成招募的槽位数量
    */
   const getCompletedRecruitCount = computed((): string => {
-    const recruit = playerData.value?.recruit;
+    const recruitInfo = getRecruitInfo.value;
+    return recruitInfo.isNull ? '0' : `${recruitInfo.complete}`;
+  });
 
-    if (!Array.isArray(recruit)) return '0';
-
-    const completedSlots = recruit.filter(slot => slot.state === 3).length;
-    return `${completedSlots}`;
+  /**
+   * 获取公开招募剩余时间
+   */
+  const getRecruitRemainingTime = computed((): string => {
+    const recruitInfo = getRecruitInfo.value;
+    if (recruitInfo.isNull || recruitInfo.remainSecs <= 0) {
+      return '已完成';
+    }
+    return formatRecoveryTimeFromSeconds(recruitInfo.remainSecs);
   });
 
   /**
    * 获取公开招募详细信息
-   * 包含每个槽位的状态和完成时间
    */
-  const getRecruitDetails = computed(() => {
-    const recruit = playerData.value?.recruit;
+  const getRecruitDetails = computed((): RecruitSlot[] => {
+    const recruitData = playerData.value?.recruit;
+    if (!recruitData || !Array.isArray(recruitData)) return [];
 
-    if (!Array.isArray(recruit)) return [];
-
-    return recruit.map((slot, index) => {
+    return recruitData.map((slot, index): RecruitSlot => {
       let status: string;
       let finishTime = '';
 
       switch (slot.state) {
+        case 0:
+          status = '无法招募';
+          break;
         case 1:
           status = '空闲';
           break;
@@ -516,36 +1158,200 @@ export const useGameDataStore = defineStore('gameData', () => {
     });
   });
 
+  // ========== 贸易站相关计算属性 ==========
+
   /**
-   * 获取正在进行的公开招募剩余时间
+   * 获取贸易站完整信息 - 基于Kotlin计算逻辑
    */
-  const getRecruitRemainingTime = computed(() => {
-    const recruit = playerData.value?.recruit;
-
-    if (!Array.isArray(recruit)) return [];
-
-    const currentTime = getCurrentTimestamp();
-
-    return recruit
-      .filter(slot => slot.state === 2 && slot.finishTs > currentTime)
-      .map(slot => {
-        const remainingSeconds = slot.finishTs - currentTime;
-        const hours = Math.floor(remainingSeconds / 3600);
-        const minutes = Math.floor((remainingSeconds % 3600) / 60);
-
-        return {
-          slotIndex: recruit.indexOf(slot) + 1,
-          remainingTime: hours > 0 ? `${hours}小时${minutes}分钟` : `${minutes}分钟`,
-          remainingSeconds
-        };
-      });
+  const getTradingsInfo = computed((): TradingsInfo => {
+    const tradingsData = playerData.value?.building?.tradings;
+    return calculateTradingsInfo(tradingsData);
   });
+
+  /**
+   * 获取贸易站订单数量显示
+   */
+  const getTradingOrderCount = computed((): string => {
+    const tradingsInfo = getTradingsInfo.value;
+    if (tradingsInfo.isNull) return '0/0 订单';
+
+    return `${tradingsInfo.current}/${tradingsInfo.max} 订单`;
+  });
+
+  /**
+   * 获取贸易站剩余时间
+   */
+  const getTradingRemainingTime = computed((): string => {
+    const tradingsInfo = getTradingsInfo.value;
+    if (tradingsInfo.isNull || tradingsInfo.remainSecs <= 0) {
+      return '已完成';
+    }
+    return formatRecoveryTimeFromSeconds(tradingsInfo.remainSecs);
+  });
+
+  /**
+   * 获取贸易站详细信息
+   */
+  const getTradingDetails = computed((): TradingDetail[] => {
+    const tradingsInfo = getTradingsInfo.value;
+    if (tradingsInfo.isNull) return [];
+
+    return tradingsInfo.tradings.map((trading: TradingStation, index: number): TradingDetail => ({
+      stationIndex: index + 1,
+      strategy: trading.strategy,
+      strategyName: trading.strategy === 'O_GOLD' ? '龙门币订单' : '其他订单',
+      current: trading.current,
+      max: trading.max,
+      progress: trading.max > 0 ? Math.floor((trading.current / trading.max) * 100) : 0,
+      remainSecs: trading.remainSecs,
+      remainingTime: trading.remainSecs > 0 ? formatRecoveryTimeFromSeconds(trading.remainSecs) : '已完成',
+      completeTime: trading.completeTime > 0 ? formatTimestamp(trading.completeTime) : '已完成'
+    }));
+  });
+
+  // ========== 制造站相关计算属性 ==========
+
+  /**
+   * 获取制造站完整信息 - 基于Kotlin计算逻辑
+   */
+  const getManufacturesInfo = computed((): ManufacturesInfo => {
+    const manufacturesData = playerData.value?.building?.manufactures;
+    const formulaMap = playerData.value?.manufactureFormulaInfoMap;
+    return calculateManufacturesInfo(manufacturesData, formulaMap);
+  });
+
+  /**
+   * 获取制造站货物数量显示
+   */
+  const getManufactureStatus = computed((): string => {
+    const manufacturesInfo = getManufacturesInfo.value;
+    if (manufacturesInfo.isNull) return '0 货物 | 0/0 运行中';
+
+    // 计算运行中的制造站数量
+    const manufacturesData = playerData.value?.building?.manufactures;
+    const totalStations = manufacturesData?.length || 0;
+    const activeStations = manufacturesData?.filter((mfg: any) => {
+      return mfg.completeWorkTime > getCurrentTimestamp();
+    }).length || 0;
+
+    return `${manufacturesInfo.current} 货物 | ${activeStations}/${totalStations} 运行中`;
+  });
+
+  /**
+   * 获取制造站剩余时间
+   */
+  const getManufactureRemainingTime = computed((): string => {
+    const manufacturesInfo = getManufacturesInfo.value;
+    if (manufacturesInfo.isNull || manufacturesInfo.remainSecs <= 0) {
+      return '已完成';
+    }
+    return formatRecoveryTimeFromSeconds(manufacturesInfo.remainSecs);
+  });
+
+  /**
+   * 获取制造站详细信息
+   */
+  const getManufactureDetails = computed((): ManufactureDetail[] => {
+    const manufacturesInfo = getManufacturesInfo.value;
+    if (manufacturesInfo.isNull) return [];
+
+    return manufacturesInfo.manufactures.map((manufacture: ManufactureStation, index: number): ManufactureDetail => ({
+      stationIndex: index + 1,
+      formula: manufacture.formula,
+      current: manufacture.current,
+      max: manufacture.max,
+      progress: manufacture.max > 0 ? Math.floor((manufacture.current / manufacture.max) * 100) : 0,
+      remainSecs: manufacture.remainSecs,
+      remainingTime: manufacture.remainSecs > 0 ? formatRecoveryTimeFromSeconds(manufacture.remainSecs) : '已完成',
+      completeTime: manufacture.completeTime > 0 ? formatTimestamp(manufacture.completeTime) : '已完成'
+    }));
+  });
+
+  // ========== 训练室相关计算属性 ==========
+
+  /**
+   * 获取训练室完整信息 - 基于Kotlin计算逻辑
+   */
+  const getTrainingInfo = computed((): TrainingInfo => {
+    const trainingData = playerData.value?.building?.training;
+    const charInfoMap = playerData.value?.charInfoMap;
+    return calculateTrainingInfo(trainingData, charInfoMap);
+  });
+
+  /**
+   * 获取训练室状态显示
+   */
+  const getTrainingStatus = computed((): string => {
+    const trainingInfo = getTrainingInfo.value;
+    if (trainingInfo.isNull) return '未配置训练室';
+
+    if (trainingInfo.status === -1) {
+      return '训练室空闲';
+    }
+
+    if (trainingInfo.status === 0) {
+      return '专精训练完成';
+    }
+
+    if (trainingInfo.status === 1) {
+      return `训练中 - 剩余${formatRecoveryTimeFromSeconds(trainingInfo.remainSecs)}`;
+    }
+
+    return '训练室状态未知';
+  });
+
+  /**
+   * 获取训练室详细信息
+   */
+  const getTrainingDetails = computed(() => {
+    const trainingInfo = getTrainingInfo.value;
+    if (trainingInfo.isNull) return null;
+
+    return {
+      trainee: trainingInfo.trainee,
+      trainer: trainingInfo.trainer,
+      profession: trainingInfo.profession,
+      targetSkill: trainingInfo.targetSkill,
+      status: trainingInfo.status,
+      remainSecs: trainingInfo.remainSecs,
+      completeTime: trainingInfo.completeTime,
+      totalPoint: trainingInfo.totalPoint,
+      remainPoint: trainingInfo.remainPoint,
+      changeRemainSecsIrene: trainingInfo.changeRemainSecsIrene,
+      changeTimeIrene: trainingInfo.changeTimeIrene,
+      changeRemainSecsLogos: trainingInfo.changeRemainSecsLogos,
+      changeTimeLogos: trainingInfo.changeTimeLogos
+    };
+  });
+
+  /**
+   * 获取训练室状态（简版）- 用于卡片显示，分行显示
+   */
+  const getTrainingSimpleStatus = computed((): string => {
+    const trainingInfo = getTrainingInfo.value;
+    if (trainingInfo.isNull) return '训练室空闲';
+
+    const traineeName = trainingInfo.trainee || '无';
+    const trainerName = trainingInfo.trainer || '无';
+
+    return `训练干员：${traineeName}\n协助干员：${trainerName}`;
+  });
+
+  /**
+   * 检查训练室是否正在运行
+   */
+  const isTrainingActive = computed((): boolean => {
+    const trainingInfo = getTrainingInfo.value;
+    return !trainingInfo.isNull && trainingInfo.status === 1;
+  });
+
+  // ========== 其他基建相关计算属性 ==========
 
   /**
    * 获取会客室线索总数
    * 会客室最多可以存放7个线索
    */
-  const getClueCount = computed(() => {
+  const getClueCount = computed((): string => {
     const meetingRoom = playerData.value?.building?.meeting;
 
     if (!meetingRoom) return '已获得线索 0/7 ';
@@ -569,97 +1375,11 @@ export const useGameDataStore = defineStore('gameData', () => {
   });
 
   /**
-   * 获取制造站运行状态和货物数量
-   */
-  const getManufactureStatus = computed((): string => {
-    const manufactures = playerData.value?.building?.manufactures;
-
-    if (!manufactures || !Array.isArray(manufactures) || manufactures.length === 0) return '0 货物 | 0/0 运行中';
-
-    const totalManufactured = manufactures.reduce((total, mfg) => {
-      const remain = mfg.remain || 0;
-      return total + (99 - remain);
-    }, 0);
-
-    const totalStations = manufactures.length;
-    const activeStations = manufactures.filter((mfg: any) => {
-      return mfg.completeWorkTime > getCurrentTimestamp();
-    }).length;
-
-    return `${totalManufactured} 货物 | ${activeStations}/${totalStations} 运行中`;
-  });
-
-  /**
-   * 获取贸易站订单数量
-   */
-  const getTradingOrderCount = computed((): string => {
-    const tradings = playerData.value?.building?.tradings;
-
-    if (!tradings || !Array.isArray(tradings)) return '0/0 订单';
-
-    let totalStockLimit = 0;
-    let totalCurrentStock = 0;
-
-    tradings.forEach((trading: any) => {
-      const stockLimit = trading.stockLimit || 0;
-      const currentStock = Array.isArray(trading.stock) ? trading.stock.length : 0;
-
-      totalStockLimit += stockLimit;
-      totalCurrentStock += currentStock;
-    });
-
-    return `${totalCurrentStock}/${totalStockLimit} 订单`;
-  });
-
-  /**
-   * 计算无人机信息 - 基于Kotlin代码逻辑
-   */
-  const calculateLaborInfo = (labor: any, currentTs: number) => {
-    if (!labor) {
-      return {
-        current: 0,
-        max: 0,
-        remainSecs: -1,
-        recoverTime: -1
-      };
-    }
-
-    const max = labor.maxValue || labor.max || 0;
-    const laborRemain = labor.remainSecs - (currentTs - labor.lastUpdateTime);
-
-    // 计算当前无人机数量
-    let current = 0;
-    if (labor.remainSecs === 0) {
-      current = labor.value || labor.current || 0;
-    } else {
-      current = Math.min(
-        max,
-        Math.floor(
-          ((currentTs - labor.lastUpdateTime) * (max - (labor.value || labor.current || 0)) /
-            labor.remainSecs + (labor.value || labor.current || 0))
-        )
-      );
-    }
-
-    const remainSecs = laborRemain < 0 ? 0 : laborRemain;
-    const recoverTime = labor.remainSecs + labor.lastUpdateTime;
-
-    return {
-      current,
-      max,
-      remainSecs,
-      recoverTime
-    };
-  };
-
-  /**
    * 获取无人机数量和恢复时间
    */
   const getLaborCount = computed(() => {
     const labor = playerData.value?.building?.labor;
-    const currentTime = getCurrentTimestamp();
-
-    const laborInfo = calculateLaborInfo(labor, currentTime);
+    const laborInfo = calculateLaborInfo(labor);
 
     const recoveryTime = formatRecoveryTimeFromSeconds(laborInfo.remainSecs);
 
@@ -667,9 +1387,7 @@ export const useGameDataStore = defineStore('gameData', () => {
       count: `${laborInfo.current}/${laborInfo.max}`,
       recovery: laborInfo.remainSecs > 0 ? recoveryTime : '已回满',
       remainSecs: laborInfo.remainSecs,
-      recoverTime: laborInfo.recoverTime,
-      // 添加原始数据用于调试
-      rawData: labor
+      recoverTime: laborInfo.recoverTime
     };
   });
 
@@ -677,364 +1395,33 @@ export const useGameDataStore = defineStore('gameData', () => {
    * 获取无人机恢复进度百分比
    */
   const getLaborRecoveryProgress = computed((): number => {
-    const labor = playerData.value?.building?.labor;
-    const currentTime = getCurrentTimestamp();
-
-    const laborInfo = calculateLaborInfo(labor, currentTime);
-
+    const laborInfo = calculateLaborInfo(playerData.value?.building?.labor);
     if (laborInfo.max === 0) return 0;
     return Math.min(100, Math.floor((laborInfo.current / laborInfo.max) * 100));
   });
 
   /**
-   * 获取无人机恢复详细信息
-   */
-  const getLaborRecoveryDetails = computed(() => {
-    const labor = playerData.value?.building?.labor;
-    const currentTime = getCurrentTimestamp();
-
-    const laborInfo = calculateLaborInfo(labor, currentTime);
-
-    return {
-      current: laborInfo.current,
-      max: laborInfo.max,
-      remainSeconds: laborInfo.remainSecs,
-      recoveryPercentage: getLaborRecoveryProgress.value,
-      nextRecoveryTime: laborInfo.recoverTime > 0 ? formatTimestamp(laborInfo.recoverTime) : '已满',
-      isFull: laborInfo.current >= laborInfo.max,
-      isRecovering: laborInfo.remainSecs > 0 && laborInfo.current < laborInfo.max
-    };
-  });
-
-  /**
-   * 获取无人机每小时恢复数量
-   */
-  const getLaborRecoveryRate = computed((): number => {
-    const labor = playerData.value?.building?.labor;
-    if (!labor) return 0;
-
-    // 根据游戏机制，无人机每小时恢复 (max - current) / (remainSecs / 3600)
-    const laborInfo = calculateLaborInfo(labor, getCurrentTimestamp());
-
-    if (laborInfo.remainSecs <= 0) return 0;
-
-    const hoursRemaining = laborInfo.remainSecs / 3600;
-    const dronesToRecover = laborInfo.max - laborInfo.current;
-
-    return hoursRemaining > 0 ? Math.floor(dronesToRecover / hoursRemaining) : 0;
-  });
-
-  /**
    * 获取宿舍休息人数
-   * 宿舍休息人数上限为15人
    */
   const getDormRestCount = computed((): string => {
-    const dormitories = playerData.value?.building?.dormitories;
-    if (!dormitories || !Array.isArray(dormitories)) return '0/15';
-
-    const totalResting = dormitories.reduce((total: number, dorm: any) => {
-      const restCount = dorm.restCount || dorm.chars?.length || dorm.characterCount || 0;
-      return total + restCount;
-    }, 0);
-
-    const actualResting = Math.min(totalResting, 15);
-
-    return `${actualResting}/15`;
-  });
-
-  /**
-   * 获取训练室状态 - 分行显示训练干员和协助者名字
-   */
-  const getTrainingStatus = computed((): string => {
-    const training = playerData.value?.building?.training;
-    if (!training) return '未配置训练室';
-
-    const trainee = training.trainee;
-    const trainer = training.trainer;
-
-    if (!trainee && !trainer) return '训练室空闲';
-
-    // 获取角色信息映射表
-    const charInfoMap = playerData.value?.charInfoMap;
-
-    let result = '';
-
-    // 处理训练干员
-    if (trainee && trainee.charId) {
-      const traineeInfo = charInfoMap?.[trainee.charId];
-      const traineeName = traineeInfo?.name || trainee.charId;
-      result += `训练干员：${traineeName}`;
-    }
-
-    // 处理协助者
-    if (trainer && trainer.charId) {
-      const trainerInfo = charInfoMap?.[trainer.charId];
-      const trainerName = trainerInfo?.name || trainer.charId;
-      if (result) {
-        result += `\n协助干员：${trainerName}`;
-      } else {
-        result += `协助干员：${trainerName}`;
-      }
-    }
-
-    return result || '训练室配置异常';
-  });
-
-  /**
-   * 获取训练室详细信息
-   */
-  const getTrainingDetails = computed(() => {
-    const training = playerData.value?.building?.training;
-    if (!training) return null;
-
-    const trainee = training.trainee;
-    const trainer = training.trainer;
-    const charInfoMap = playerData.value?.charInfoMap;
-
-    const details: {
-      trainee?: { charId: string; name: string; originalData: any };
-      trainer?: { charId: string; name: string; originalData: any };
-    } = {};
-
-    // 处理训练干员信息
-    if (trainee && trainee.charId) {
-      const traineeInfo = charInfoMap?.[trainee.charId];
-      details.trainee = {
-        charId: trainee.charId,
-        name: traineeInfo?.name || trainee.charId,
-        originalData: trainee
-      };
-    }
-
-    // 处理协助者信息
-    if (trainer && trainer.charId) {
-      const trainerInfo = charInfoMap?.[trainer.charId];
-      details.trainer = {
-        charId: trainer.charId,
-        name: trainerInfo?.name || trainer.charId,
-        originalData: trainer
-      };
-    }
-
-    return details;
-  });
-
-  /**
-   * 获取训练室状态（简版）- 用于卡片显示，分行显示
-   */
-  const getTrainingSimpleStatus = computed((): string => {
-    const details = getTrainingDetails.value;
-    if (!details) return '训练室空闲';
-
-    const traineeName = details.trainee?.name || '无';
-    const trainerName = details.trainer?.name || '无';
-
-    return `训练干员：${traineeName}\n协助干员：${trainerName}`;
-  });
-
-  /**
-   * 获取训练室状态（HTML格式）- 用于支持HTML渲染的组件
-   */
-  const getTrainingHtmlStatus = computed((): string => {
-    const details = getTrainingDetails.value;
-    if (!details) return '训练室空闲';
-
-    const traineeName = details.trainee?.name || '无';
-    const trainerName = details.trainer?.name || '无';
-
-    return `<p>训练干员：</p>${traineeName}<br> <p>协助干员：</p>${trainerName}`;
-  });
-
-  /**
-   * 检查训练室是否正在运行
-   */
-  const isTrainingActive = computed((): boolean => {
-    const training = playerData.value?.building?.training;
-    if (!training) return false;
-
-    const trainee = training.trainee;
-    return !!(trainee && trainee.charId);
-  });
-
-  /**
-   * 获取干员头像URL
-   * @param charId 干员ID
-   * @param evolvePhase 精英阶段
-   * @returns 干员头像URL
-   */
-  const getOperatorAvatarUrl = (charId: string, evolvePhase: number): string => {
-    if (!charId) return '';
-
-    // 基础CDN URL
-    const baseUrl = 'https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar';
-
-    let avatarFileName = charId;
-
-    // 根据精英阶段判断头像文件名
-    // 精英阶段0和1使用基础头像，精英阶段2使用精英二头像
-    if (evolvePhase === 2) {
-      // 精英二头像文件名格式：charId + '_2'
-      avatarFileName = `${charId}_2`;
-    }
-    // 精英阶段0和1使用基础头像，不需要修改文件名
-
-    // 构建完整的头像URL
-    const avatarUrl = `${baseUrl}/${avatarFileName}.png`;
-
-    logger.debug('生成干员头像URL', {
-      charId,
-      evolvePhase,
-      avatarFileName,
-      avatarUrl
-    });
-
-    return avatarUrl;
-  };
-
-  /**
-   * 处理干员头像加载错误
-   * @param charId 干员ID
-   * @param event 错误事件
-   */
-  const handleOperatorAvatarError = (charId: string, event: Event): void => {
-    const imgElement = event.target as HTMLImageElement;
-    logger.warn('干员头像加载失败', {
-      charId,
-      imgSrc: imgElement.src
-    });
-
-    // 可以在这里设置默认头像或错误处理
-    // 目前只是记录日志，保持原有显示
-  };
-
-  /**
-   * 处理干员头像加载成功
-   * @param charId 干员ID
-   */
-  const handleOperatorAvatarLoad = (charId: string): void => {
-    logger.debug('干员头像加载成功', { charId });
-  };
-
-  /**
-   * 获取助战干员详细信息（每个干员作为独立对象）
-   */
-  const getAssistCharDetails = computed(() => {
-    const assistChars = playerData.value?.assistChars;
-
-    if (!Array.isArray(assistChars) || assistChars.length === 0) {
-      return [];
-    }
-
-    const charInfoMap = playerData.value?.charInfoMap;
-
-    return assistChars.map((char: any) => {
-      const charInfo = charInfoMap?.[char.charId];
-      const charName = charInfo?.name || char.charId;
-
-      // 处理精英阶段显示
-      let evolvePhaseText = '';
-      if (char.evolvePhase === 1) {
-        evolvePhaseText = '精一';
-      } else if (char.evolvePhase === 2) {
-        evolvePhaseText = '精二';
-      }
-
-      // 处理技能信息
-      let skillText = '';
-      let skillNumber = '1';
-      if (char.skillId) {
-        // 从skillId中提取技能编号，如 "skchr_wisdel_3" 中的 3
-        const skillMatch = char.skillId.match(/_(\d+)$/);
-        skillNumber = skillMatch ? skillMatch[1] : '1';
-        skillText = `${skillNumber}技能 ${char.mainSkillLvl || 1}级`;
-      } else {
-        skillText = `1技能 ${char.mainSkillLvl || 1}级`;
-      }
-
-      // 处理潜能等级
-      const potentialText = char.potentialRank > 0 ? `潜${char.potentialRank}` : '';
-
-      // 处理模组等级
-      let moduleText = '';
-      if (char.specializeLevel > 0) {
-        moduleText = `模组${char.specializeLevel}级`;
-      }
-
-      // 获取干员头像URL
-      const avatarUrl = getOperatorAvatarUrl(char.charId, char.evolvePhase || 0);
-
-      return {
-        charId: char.charId,
-        name: charName,
-        level: char.level || 0,
-        evolvePhase: char.evolvePhase || 0,
-        evolvePhaseText,
-        skillId: char.skillId || '',
-        skillNumber,
-        skillText,
-        mainSkillLvl: char.mainSkillLvl || 1,
-        potentialRank: char.potentialRank || 0,
-        potentialText,
-        specializeLevel: char.specializeLevel || 0,
-        moduleText,
-        skinId: char.skinId || '',
-        avatarUrl, // 添加头像URL
-        originalData: char
-      };
-    });
-  });
-  /**
-   * 获取助战干员数量
-   */
-  const getAssistCharCount = computed((): number => {
-    return playerData.value?.assistChars?.length || 0;
-  });
-
-  /**
-   * 获取助战干员状态（数组格式）- 每个干员独立显示
-   */
-  const getAssistCharArrayStatus = computed((): any[] => {
-    const details = getAssistCharDetails.value;
-    if (details.length === 0) return [{ name: '无助战干员', level: '', skill: '', avatarUrl: '' }];
-
-    return details.map(char => {
-      const levelText = char.evolvePhaseText ? `${char.evolvePhaseText} ${char.level}级` : `${char.level}级`;
-      const potentialText = char.potentialText ? ` ${char.potentialText}` : '';
-      const moduleText = char.moduleText ? ` ${char.moduleText}` : '';
-
-      return {
-        name: char.name,
-        level: `${levelText}${potentialText}`,
-        skill: `${char.skillText}${moduleText}`,
-        fullInfo: `${char.name} ${levelText}${potentialText} ${char.skillText}${moduleText}`,
-        avatarUrl: char.avatarUrl, // 添加头像URL
-        charId: char.charId, // 添加charId用于错误处理
-        evolvePhase: char.evolvePhase, // 添加精英阶段
-        rawData: char
-      };
-    });
-  });
-
-  /**
-   * 获取收藏品数量（肉鸽）
-   */
-  const getRelicCount = computed((): number => {
-    return playerData.value?.rogue?.relicCnt || 0;
-  });
-
-  /**
-   * 获取实际理智信息
-   */
-  const getActualApInfo = computed(() => {
-    const apData = playerData.value?.status?.ap;
-    return calculateActualAp(apData);
+    const dormitoriesInfo = calculateDormitoriesInfo(playerData.value?.building?.dormitories);
+    return `${dormitoriesInfo.current}/${dormitoriesInfo.max}`;
   });
 
   /**
    * 获取疲劳干员数量
    */
   const getTiredCharsCount = computed((): number => {
-    return playerData.value?.building?.tiredChars?.length || 0;
+    const tiredInfo = calculateTiredInfo(playerData.value?.building);
+    return tiredInfo.current;
+  });
+
+  /**
+   * 获取实际理智信息
+   */
+  const getActualApInfo = computed((): ApInfo => {
+    const apData = playerData.value?.status?.ap;
+    return calculateActualAp(apData);
   });
 
   /**
@@ -1043,6 +1430,26 @@ export const useGameDataStore = defineStore('gameData', () => {
   const getCampaignReward = computed((): string => {
     const reward = playerData.value?.campaign?.reward;
     return `${reward?.current || 0}/${reward?.total || 0}`;
+  });
+
+  /**
+   * 获取每日任务进度
+   */
+  const getDailyTaskProgress = computed((): string => {
+    const daily = playerData.value?.routine?.daily;
+    const completed = daily?.current || 0;
+    const total = daily?.total || 0;
+    return `${completed}/${total}`;
+  });
+
+  /**
+   * 获取每周任务进度
+   */
+  const getWeeklyTaskProgress = computed((): string => {
+    const weekly = playerData.value?.routine?.weekly;
+    const completed = weekly?.current || 0;
+    const total = weekly?.total || 0;
+    return `${completed}/${total}`;
   });
 
   /**
@@ -1061,22 +1468,6 @@ export const useGameDataStore = defineStore('gameData', () => {
     return `${higherItem?.current || 0}/${higherItem?.total || 0}`;
   });
 
-  /**
-   * 获取每日任务进度
-   */
-  const getDailyTaskProgress = computed((): string => {
-    const daily = playerData.value?.routine?.daily;
-    return formatTaskProgress(daily);
-  });
-
-  /**
-   * 获取每周任务进度
-   */
-  const getWeeklyTaskProgress = computed((): string => {
-    const weekly = playerData.value?.routine?.weekly;
-    return formatTaskProgress(weekly);
-  });
-
   // ========== 调试功能 ==========
 
   /**
@@ -1084,14 +1475,17 @@ export const useGameDataStore = defineStore('gameData', () => {
    */
   const debugData = (): void => {
     logger.debug('=== 完整玩家数据 ===', playerData.value);
-    logger.debug('=== 任务数据 ===', playerData.value?.routine);
     logger.debug('=== 基建数据 ===', playerData.value?.building);
-    logger.debug('=== 宿舍数据 ===', playerData.value?.building?.dormitories);
-    logger.debug('=== 会客室数据 ===', playerData.value?.building?.meeting);
-    logger.debug('=== 无人机数据 ===', playerData.value?.building?.labor);
+    logger.debug('=== 公开招募数据 ===', playerData.value?.recruit);
+    logger.debug('=== 公招刷新数据 ===', playerData.value?.building?.hire);
     logger.debug('=== 贸易站数据 ===', playerData.value?.building?.tradings);
     logger.debug('=== 制造站数据 ===', playerData.value?.building?.manufactures);
-    logger.debug('=== 公招数据 ===', playerData.value?.recruit);
+    logger.debug('=== 训练室数据 ===', playerData.value?.building?.training);
+    logger.debug('=== 计算后的公开招募信息 ===', getRecruitInfo.value);
+    logger.debug('=== 计算后的公招刷新信息 ===', getHireInfo.value);
+    logger.debug('=== 计算后的贸易站信息 ===', getTradingsInfo.value);
+    logger.debug('=== 计算后的制造站信息 ===', getManufacturesInfo.value);
+    logger.debug('=== 计算后的训练室信息 ===', getTrainingInfo.value);
   };
 
   // ========== 核心方法 ==========
@@ -1101,124 +1495,122 @@ export const useGameDataStore = defineStore('gameData', () => {
    * @param refresh - 是否强制刷新（忽略缓存）
    */
   const fetchGameData = async (refresh = false): Promise<void> => {
-    return logger.performanceAsync('加载游戏数据', async () => {
-      // 缓存检查逻辑
-      if (!refresh && dataCache.value && dataCache.value.data) {
-        const currentMs = Date.now();
-        const cacheAge = currentMs - dataCache.value.timestamp;
-        if (cacheAge < CACHE_DURATION) {
-          const cacheAgeSeconds = Math.floor(cacheAge / 1000);
-          logger.debug('使用缓存数据', {
-            cacheAge: cacheAgeSeconds,
-            cacheDuration: CACHE_DURATION / 1000
-          });
-          playerData.value = dataCache.value.data;
-          lastUpdateTime.value = currentMs;
-          // 数据加载成功后更新头像
-          fetchUserAvatar();
-          isLoading.value = false;
-          debugData();
-          return;
-        }
-      }
-
-      if (refresh) {
-        isRefreshing.value = true;
-        logger.info('手动刷新游戏数据');
-      } else {
-        isLoading.value = true;
-        logger.info('开始加载游戏数据');
-      }
-      errorMsg.value = '';
-
-      try {
-        logger.debug('检查用户登录状态');
-        if (!authStore.isLogin) {
-          errorMsg.value = '请先登录账号';
-          logger.warn('未登录状态下尝试获取游戏数据');
-          return;
-        }
-
-        logger.debug('检查绑定角色列表');
-        if (!authStore.bindingRoles || authStore.bindingRoles.length === 0) {
-          logger.info('没有绑定角色，正在获取角色列表...');
-          try {
-            await authStore.fetchBindingRoles();
-            logger.info('角色列表获取成功');
-          } catch (error: any) {
-            errorMsg.value = '获取角色列表失败: ' + (error.message || '未知错误');
-            logger.error('获取角色列表失败', error);
-            return;
-          }
-        }
-
-        const roleCount = authStore.bindingRoles.length;
-        logger.debug(`当前绑定角色数量: ${roleCount}`);
-
-        const targetRole = authStore.bindingRoles.find((role: any) => role.isDefault) || authStore.bindingRoles[0];
-
-        if (!targetRole) {
-          errorMsg.value = '未找到绑定的游戏角色';
-          logger.error('未找到绑定的游戏角色');
-          return;
-        }
-
-        logger.info(`使用角色获取数据`, {
-          name: targetRole.nickName,
-          uid: targetRole.uid
+    // 缓存检查逻辑
+    if (!refresh && dataCache.value && dataCache.value.data) {
+      const currentMs = Date.now();
+      const cacheAge = currentMs - dataCache.value.timestamp;
+      if (cacheAge < CACHE_DURATION) {
+        const cacheAgeSeconds = Math.floor(cacheAge / 1000);
+        logger.debug('使用缓存数据', {
+          cacheAge: cacheAgeSeconds,
+          cacheDuration: CACHE_DURATION / 1000
         });
-
-        const data = await AuthAPI.getPlayerData(
-          authStore.sklandCred,
-          authStore.sklandSignToken,
-          targetRole.uid
-        );
-
-        logger.info('玩家数据获取成功', {
-          hasData: !!data,
-          dataKeys: data ? Object.keys(data) : []
-        });
-
-        playerData.value = data;
-        lastUpdateTime.value = Date.now();
-
-        dataCache.value = {
-          data: data,
-          timestamp: Date.now()
-        };
-
+        playerData.value = dataCache.value.data;
+        lastUpdateTime.value = currentMs;
         // 数据加载成功后更新头像
         fetchUserAvatar();
-        debugData();
-
-        logger.debug('游戏数据加载完成并已缓存');
-
-      } catch (error: any) {
-        const message = error.message || '游戏数据加载失败，请稍后重试';
-        logger.error('游戏数据加载失败', error);
-
-        if (message.includes('认证失败') || message.includes('401')) {
-          errorMsg.value = '登录已过期，请重新登录';
-          logger.warn('认证失败，需要重新登录');
-        } else if (message.includes('网络') || message.includes('Network')) {
-          errorMsg.value = '网络连接失败，请检查网络设置';
-          logger.warn('网络连接失败');
-        } else if (message.includes('角色')) {
-          errorMsg.value = '未找到游戏角色，请确认账号绑定';
-          logger.warn('未找到游戏角色');
-        } else {
-          errorMsg.value = message;
-          logger.error('未知错误类型', { message });
-        }
-      } finally {
         isLoading.value = false;
-        isRefreshing.value = false;
-        logger.debug('游戏数据加载状态已重置', {
-          isLoading: isLoading.value,
-          isRefreshing: isRefreshing.value
-        });
+        debugData();
+        return;
       }
-    });
+    }
+
+    if (refresh) {
+      isRefreshing.value = true;
+      logger.info('手动刷新游戏数据');
+    } else {
+      isLoading.value = true;
+      logger.info('开始加载游戏数据');
+    }
+    errorMsg.value = '';
+
+    try {
+      logger.debug('检查用户登录状态');
+      if (!authStore.isLogin) {
+        errorMsg.value = '请先登录账号';
+        logger.warn('未登录状态下尝试获取游戏数据');
+        return;
+      }
+
+      logger.debug('检查绑定角色列表');
+      if (!authStore.bindingRoles || authStore.bindingRoles.length === 0) {
+        logger.info('没有绑定角色，正在获取角色列表...');
+        try {
+          await authStore.fetchBindingRoles();
+          logger.info('角色列表获取成功');
+        } catch (error: any) {
+          errorMsg.value = '获取角色列表失败: ' + (error.message || '未知错误');
+          logger.error('获取角色列表失败', error);
+          return;
+        }
+      }
+
+      const roleCount = authStore.bindingRoles.length;
+      logger.debug(`当前绑定角色数量: ${roleCount}`);
+
+      const targetRole = authStore.bindingRoles.find((role: any) => role.isDefault) || authStore.bindingRoles[0];
+
+      if (!targetRole) {
+        errorMsg.value = '未找到绑定的游戏角色';
+        logger.error('未找到绑定的游戏角色');
+        return;
+      }
+
+      logger.info(`使用角色获取数据`, {
+        name: targetRole.nickName,
+        uid: targetRole.uid
+      });
+
+      const data = await AuthAPI.getPlayerData(
+        authStore.sklandCred,
+        authStore.sklandSignToken,
+        targetRole.uid
+      );
+
+      logger.info('玩家数据获取成功', {
+        hasData: !!data,
+        dataKeys: data ? Object.keys(data) : []
+      });
+
+      playerData.value = data;
+      lastUpdateTime.value = Date.now();
+
+      dataCache.value = {
+        data: data,
+        timestamp: Date.now()
+      };
+
+      // 数据加载成功后更新头像
+      fetchUserAvatar();
+      debugData();
+
+      logger.debug('游戏数据加载完成并已缓存');
+
+    } catch (error: any) {
+      const message = error.message || '游戏数据加载失败，请稍后重试';
+      logger.error('游戏数据加载失败', error);
+
+      if (message.includes('认证失败') || message.includes('401')) {
+        errorMsg.value = '登录已过期，请重新登录';
+        logger.warn('认证失败，需要重新登录');
+      } else if (message.includes('网络') || message.includes('Network')) {
+        errorMsg.value = '网络连接失败，请检查网络设置';
+        logger.warn('网络连接失败');
+      } else if (message.includes('角色')) {
+        errorMsg.value = '未找到游戏角色，请确认账号绑定';
+        logger.warn('未找到游戏角色');
+      } else {
+        errorMsg.value = message;
+        logger.error('未知错误类型', { message });
+      }
+    } finally {
+      isLoading.value = false;
+      isRefreshing.value = false;
+      logger.debug('游戏数据加载状态已重置', {
+        isLoading: isLoading.value,
+        isRefreshing: isRefreshing.value
+      });
+    }
   };
 
   /**
@@ -1266,7 +1658,7 @@ export const useGameDataStore = defineStore('gameData', () => {
     logger.info('游戏数据缓存已清除');
   };
 
-// ========== 导出接口 ==========
+  // ========== 导出接口 ==========
   return {
     // 状态
     isLoading,
@@ -1283,46 +1675,59 @@ export const useGameDataStore = defineStore('gameData', () => {
     userLevel,
     getCharCount,
     getMainStageProgress,
-    getHireRefreshCount,
+
+    // 公开招募相关
+    getRecruitInfo,
+    getHireInfo,
     getHireSlotCount,
+    getHireRefreshCount,
     getCompletedRecruitCount,
-    getRecruitDetails,
     getRecruitRemainingTime,
-    getClueCount,
-    getManufactureStatus,
+    getRecruitDetails,
+
+    // 贸易站相关
+    getTradingsInfo,
     getTradingOrderCount,
-    getLaborCount,
-    getLaborRecoveryProgress,
-    getLaborRecoveryDetails,
-    getLaborRecoveryRate,
-    getDormRestCount,
+    getTradingRemainingTime,
+    getTradingDetails,
+
+    // 制造站相关
+    getManufacturesInfo,
+    getManufactureStatus,
+    getManufactureRemainingTime,
+    getManufactureDetails,
+
+    // 训练室相关
+    getTrainingInfo,
     getTrainingStatus,
     getTrainingDetails,
     getTrainingSimpleStatus,
-    getTrainingHtmlStatus,
     isTrainingActive,
-    // 助战干员相关计算属性
-    getAssistCharCount,
-    getAssistCharDetails,
-    getAssistCharArrayStatus,
-    getRelicCount,
-    getActualApInfo,
+
+    // 其他基建相关
+    getClueCount,
+    getLaborCount,
+    getLaborRecoveryProgress,
+    getDormRestCount,
     getTiredCharsCount,
+    getActualApInfo,
     getCampaignReward,
-    getTowerLowerItem,
-    getTowerHigherItem,
     getDailyTaskProgress,
     getWeeklyTaskProgress,
+    getTowerLowerItem,
+    getTowerHigherItem,
 
     // 方法
     fetchGameData,
     refreshData,
     formatTimestamp,
-    formatRecoveryTime,
+    formatRecoveryTime, // 添加缺失的函数
+    formatRecoveryTimeFromSeconds,
     debugData,
     startTimeUpdate,
     stopTimeUpdate,
     clearCache,
+
     // 设置相关方法
     processImageUrl,
     getAvatarPlaceholder,
@@ -1330,10 +1735,6 @@ export const useGameDataStore = defineStore('gameData', () => {
     handleAvatarLoad,
     fetchUserAvatar,
     copyUid,
-    copyNickname,
-    // 干员头像相关方法
-    getOperatorAvatarUrl,
-    handleOperatorAvatarError,
-    handleOperatorAvatarLoad
+    copyNickname
   };
 });

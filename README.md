@@ -2,6 +2,11 @@
 
 主要功能：公招计算，森空岛签到，游戏数据查看
 
+# 参考项目
+[Skland_API](https://github.com/ProbiusOfficial/Skland_API)  API\
+[Arkscreen](https://github.com/blueskybone/ArkScreen)  项目解析部分数据
+
+
 # ToDoList
 
 * 寻访记录
@@ -31,8 +36,10 @@
 
 * 修好了认证问题，现在重启启动应用不会登录过期了
 * 修改了数据显示布局
-* 修改了部分文字显示
+* 修改了部分文字内容显示
 * 迁移部分板块至账号信息板块中
+* 将刷新改为全局功能，现在可以在任意一个页面进行刷新了
+* 除了干员疲劳，其他的数据接好了
 
 
 ### v0.2.6

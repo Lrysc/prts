@@ -1,210 +1,311 @@
-<script setup lang="ts">
-import { ref, onMounted, computed, watch } from 'vue';
-import { useAuthStore } from '@stores/auth';
-import { GachaAPI } from '@services/api';
-import { showSuccess, showError, showWarning, showInfo } from '@services/toastService';
+<template>
+  <div class="headhunting-record-container">
+    <!-- ==================== 主内容区域 ==================== -->
 
-// ==================== Store实例 ====================
+    <!-- 加载状态 -->
+    <div class="main-loading-container" v-if="isLoading">
+      <div class="loading-content">
+        <div class="spinner"></div>
+        <p class="loading-text">加载寻访记录中...</p>
+      </div>
+    </div>
+
+    <!-- 未登录提示 -->
+    <div class="section-card" v-else-if="!authStore.isLogin">
+      <h3 class="section-title">--- 登录提示 ---</h3>
+      <div class="login-prompt">
+        <p class="prompt-text">请登录森空岛账号以查看寻访记录</p>
+        <p class="prompt-subtext">登录后即可查看详细的抽卡记录和统计信息</p>
+      </div>
+    </div>
+
+    <!-- 无数据提示 -->
+    <div class="section-card" v-else-if="!gachaData.length">
+      <h3 class="section-title">--- 数据提示 ---</h3>
+      <div class="no-data-prompt">
+        <p class="prompt-text">暂无寻访记录数据</p>
+        <p class="prompt-subtext">请先导入数据或刷新获取最新记录</p>
+        <div class="action-buttons">
+          <button class="import-btn" @click="handleImport">导入数据</button>
+          <button class="refresh-btn" @click="handleRefresh">刷新数据</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 寻访记录内容 -->
+    <div class="cards-wrapper" v-else>
+      <!-- 数据头部操作栏 -->
+      <div class="data-header">
+        <div class="left-section">
+          <div class="update-info">
+            <span class="last-update" v-if="lastUpdateTime">
+              最后更新：{{ formatTimestamp(lastUpdateTime) }}
+            </span>
+          </div>
+        </div>
+        <div class="header-buttons">
+          <button class="import-btn" @click="handleImport" :disabled="isLoading">
+            {{ isLoading ? '导入中...' : '导入数据' }}
+          </button>
+          <button class="refresh-btn" @click="handleRefresh" :disabled="isLoading">
+            {{ isLoading ? '刷新中...' : '刷新数据' }}
+          </button>
+        </div>
+      </div>
+
+      <!-- 卡池列表 -->
+      <div class="gacha-pools-container">
+        <div
+          v-for="(pool, poolIndex) in gachaData"
+          :key="pool.pool + poolIndex"
+          class="pool-section"
+        >
+          <!-- 卡池标题 -->
+          <div class="pool-header">
+            <h3 class="pool-title">{{ pool.pool }}</h3>
+            <div class="pool-info">
+              <span class="pool-count">总抽数: {{ pool.count }}</span>
+              <span class="pool-date">时间: {{ formatDate(pool.ts) }}</span>
+              <span v-if="pool.isFes" class="fes-tag">限定</span>
+            </div>
+          </div>
+
+          <!-- 抽卡记录表格 -->
+          <div class="records-table-container">
+            <table class="records-table">
+              <thead>
+              <tr>
+                <th class="col-index">序号</th>
+                <th class="col-operator">干员名</th>
+                <th class="col-rarity">稀有度</th>
+                <th class="col-new">是否新干员</th>
+                <th class="col-count">保底计数</th>
+                <th class="col-time">时间</th>
+              </tr>
+              </thead>
+              <tbody>
+              <tr
+                v-for="(record, index) in pool.data"
+                :key="record.id"
+                :class="getRarityClass(record)"
+              >
+                <td class="col-index">{{ index + 1 }}</td>
+                <td class="col-operator">
+                  <span class="operator-name">{{ record.name }}</span>
+                  <span v-if="record.isNew" class="new-badge">NEW</span>
+                </td>
+                <td class="col-rarity">
+                  <span class="rarity-stars">{{ getRarityStars(record) }}</span>
+                </td>
+                <td class="col-new">
+                    <span :class="['new-indicator', record.isNew ? 'is-new' : 'not-new']">
+                      {{ record.isNew ? '是' : '否' }}
+                    </span>
+                </td>
+                <td class="col-count">{{ record.count }}</td>
+                <td class="col-time">{{ formatRecordTime(record.ts) }}</td>
+              </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- 卡池统计信息 -->
+          <div class="pool-stats">
+            <div class="stat-item">
+              <span class="stat-label">6星数量:</span>
+              <span class="stat-value">{{ getRarityCount(pool.data, 6) }}</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label">5星数量:</span>
+              <span class="stat-value">{{ getRarityCount(pool.data, 5) }}</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label">新干员:</span>
+              <span class="stat-value">{{ getNewOperatorCount(pool.data) }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 文件导入对话框 -->
+    <input
+      type="file"
+      ref="fileInput"
+      accept=".json"
+      style="display: none"
+      @change="handleFileSelect"
+    />
+  </div>
+</template>
+
+<script setup lang="ts">
+import { ref, onMounted, computed, inject } from 'vue';
+import { useAuthStore } from '@stores/auth';
+import { showSuccess, showError, showInfo } from '@services/toastService';
+
+// ==================== 类型定义 ====================
+interface Record {
+  id: number;
+  name: string;
+  charId: string;
+  isNew: boolean;
+  count: number;
+  ts: number;
+}
+
+interface GachaPool {
+  pool: string;
+  count: number;
+  ts: number;
+  isFes: boolean;
+  data: Record[];
+}
+
+// ==================== Store实例初始化 ====================
 const authStore = useAuthStore();
 
-// ==================== 数据类型定义 ====================
-interface GachaCategory {
-  cateName: string;
-  category: string;
-  count: number;
-}
+// ==================== 注入全局刷新方法 ====================
+const refreshData = inject('refreshData') as (() => Promise<void>) | undefined;
 
-interface GachaRecord {
-  ts: number;
-  pool: string;
-  chars: Array<{
-    name: string;
-    rarity: number;
-    isNew: boolean;
-  }>;
-}
-
-interface PoolRecords {
-  [poolName: string]: GachaRecord[];
-}
-
-// ==================== 响应式状态 ====================
-const gachaCategories = ref<GachaCategory[]>([]);
-const selectedCategory = ref<string>('');
-const poolRecords = ref<PoolRecords>({});
+// ==================== 组件状态管理 ====================
 const isLoading = ref(false);
-const isRefreshing = ref(false);
-const errorMsg = ref('');
-
-// 分页状态
-const currentPages = ref<{ [poolName: string]: number }>({});
-const recordsPerPage = 20;
-const hasMoreRecords = ref<{ [poolName: string]: boolean }>({});
+const gachaData = ref<GachaPool[]>([]);
+const lastUpdateTime = ref<number>(0);
+const fileInput = ref<HTMLInputElement | null>(null);
 
 // ==================== 计算属性 ====================
-const mainUid = computed(() => {
-  return authStore.bindingRoles.find(role => role.isDefault)?.uid || authStore.bindingRoles[0]?.uid || '';
+/**
+ * 总抽数统计
+ */
+const totalPulls = computed(() => {
+  return gachaData.value.reduce((total, pool) => total + pool.count, 0);
 });
-
-const hasValidCredentials = computed(() => {
-  return authStore.isLogin && authStore.isCredentialsReady;
-});
-
-const sortedCategories = computed(() => {
-  return [...gachaCategories.value].sort((a, b) => b.count - a.count);
-});
-
-const hasData = computed(() => {
-  return Object.keys(poolRecords.value).length > 0;
-});
-
-// ==================== 方法定义 ====================
 
 /**
- * 加载卡池分类
+ * 总6星数量
  */
-const loadGachaCategories = async () => {
-  if (!hasValidCredentials.value || !mainUid.value) {
-    showWarning('请先登录并选择角色');
-    return;
+const totalSixStars = computed(() => {
+  return gachaData.value.reduce((total, pool) => {
+    return total + getRarityCount(pool.data, 6);
+  }, 0);
+});
+
+// ==================== 数据操作方法 ====================
+
+/**
+ * 处理文件导入
+ */
+const handleImport = () => {
+  if (fileInput.value) {
+    fileInput.value.click();
   }
+};
 
-  isLoading.value = true;
-  errorMsg.value = '';
+/**
+ * 处理文件选择
+ */
+const handleFileSelect = (event: Event) => {
+  const target = event.target as HTMLInputElement;
+  const file = target.files?.[0];
 
-  try {
-    const categories = await GachaAPI.getGachaCategories(
-      authStore.sklandCred,
-      authStore.sklandSignToken,
-      mainUid.value
-    );
+  if (!file) return;
 
-    gachaCategories.value = categories;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const content = e.target?.result as string;
+      const importedData = JSON.parse(content) as GachaPool[];
 
-    if (categories.length > 0 && !selectedCategory.value) {
-      selectedCategory.value = categories[0].category;
+      if (Array.isArray(importedData)) {
+        gachaData.value = importedData;
+        lastUpdateTime.value = Date.now();
+        showSuccess('数据导入成功！');
+
+        // 保存到本地存储
+        localStorage.setItem('gachaData', JSON.stringify(importedData));
+        localStorage.setItem('gachaLastUpdate', lastUpdateTime.value.toString());
+      } else {
+        throw new Error('文件格式不正确');
+      }
+    } catch (error) {
+      console.error('导入数据失败:', error);
+      showError('导入失败：文件格式不正确');
     }
 
-    showSuccess('卡池分类加载成功');
-  } catch (error: any) {
-    const errorMessage = error?.message || '加载卡池分类失败';
-    console.error('加载卡池分类失败:', error);
-    errorMsg.value = errorMessage;
-    showError(errorMessage);
+    // 重置文件输入
+    if (target) target.value = '';
+  };
+
+  reader.readAsText(file);
+};
+
+/**
+ * 处理刷新数据
+ */
+const handleRefresh = async () => {
+  if (refreshData) {
+    await refreshData();
+  } else {
+    // 本地刷新逻辑
+    await fetchGachaData();
+  }
+};
+
+/**
+ * 获取抽卡数据
+ */
+const fetchGachaData = async () => {
+  if (!authStore.isLogin) return;
+
+  isLoading.value = true;
+
+  try {
+    // 这里应该调用实际的API
+    // const response = await GachaAPI.getGachaRecords(authStore.userId);
+    // gachaData.value = processGachaData(response.data);
+
+    // 模拟数据加载
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+    // 尝试从本地存储加载数据
+    const savedData = localStorage.getItem('gachaData');
+    if (savedData) {
+      gachaData.value = JSON.parse(savedData);
+      const savedTime = localStorage.getItem('gachaLastUpdate');
+      lastUpdateTime.value = savedTime ? parseInt(savedTime) : Date.now();
+    }
+
+    showSuccess('寻访记录加载完成！');
+  } catch (error) {
+    console.error('获取寻访记录失败:', error);
+    showError('获取寻访记录失败，请稍后重试');
   } finally {
     isLoading.value = false;
   }
 };
 
-/**
- * 加载抽卡记录
- */
-const loadGachaRecords = async (category: string, loadMore: boolean = false) => {
-  if (!hasValidCredentials.value || !mainUid.value) {
-    showWarning('请先登录并选择角色');
-    return;
-  }
-
-  if (!loadMore) {
-    isRefreshing.value = true;
-  }
-  errorMsg.value = '';
-
-  try {
-    let records;
-    const poolName = getPoolNameByCategory(category);
-
-    if (loadMore && poolRecords.value[poolName]?.length) {
-      const lastRecord = poolRecords.value[poolName][poolRecords.value[poolName].length - 1];
-      records = await GachaAPI.getMoreGachaRecords(
-        authStore.sklandCred,
-        authStore.sklandSignToken,
-        mainUid.value,
-        category,
-        lastRecord.ts,
-        1,
-        recordsPerPage
-      );
-    } else {
-      records = await GachaAPI.getGachaRecords(
-        authStore.sklandCred,
-        authStore.sklandSignToken,
-        mainUid.value,
-        category,
-        recordsPerPage
-      );
-    }
-
-    if (!poolRecords.value[poolName]) {
-      poolRecords.value[poolName] = [];
-    }
-
-    if (loadMore) {
-      poolRecords.value[poolName].push(...records.list);
-    } else {
-      poolRecords.value[poolName] = records.list;
-    }
-
-    // 更新分页状态
-    if (!currentPages.value[poolName]) {
-      currentPages.value[poolName] = 1;
-    }
-
-    // 检查是否还有更多记录
-    hasMoreRecords.value[poolName] = records.list.length === recordsPerPage;
-
-    if (loadMore) {
-      showSuccess(`加载了 ${records.list.length} 条抽卡记录`);
-    } else {
-      showSuccess(`抽卡记录加载成功，共 ${records.list.length} 条记录`);
-    }
-  } catch (error: any) {
-    const errorMessage = error?.message || '加载抽卡记录失败';
-    console.error('加载抽卡记录失败:', error);
-    errorMsg.value = errorMessage;
-    showError(errorMessage);
-  } finally {
-    isRefreshing.value = false;
-  }
-};
-
-/**
- * 根据分类获取卡池名称
- */
-const getPoolNameByCategory = (category: string): string => {
-  const categoryObj = gachaCategories.value.find(cat => cat.category === category);
-  return categoryObj?.cateName || category;
-};
-
-/**
- * 处理分类选择变化
- */
-const handleCategoryChange = () => {
-  if (selectedCategory.value) {
-    const poolName = getPoolNameByCategory(selectedCategory.value);
-    if (!poolRecords.value[poolName]) {
-      loadGachaRecords(selectedCategory.value);
-    }
-  }
-};
-
-/**
- * 加载更多记录
- */
-const loadMoreRecords = (poolName: string) => {
-  const category = gachaCategories.value.find(cat => cat.cateName === poolName)?.category;
-  if (category) {
-    currentPages.value[poolName] = (currentPages.value[poolName] || 0) + 1;
-    loadGachaRecords(category, true);
-  }
-};
+// ==================== 工具方法 ====================
 
 /**
  * 格式化时间戳
  */
 const formatTimestamp = (timestamp: number): string => {
-  return new Date(timestamp * 1000).toLocaleString('zh-CN', {
-    year: 'numeric',
+  return new Date(timestamp).toLocaleString('zh-CN');
+};
+
+/**
+ * 格式化日期
+ */
+const formatDate = (timestamp: number): string => {
+  return new Date(timestamp).toLocaleDateString('zh-CN');
+};
+
+/**
+ * 格式化记录时间
+ */
+const formatRecordTime = (timestamp: number): string => {
+  return new Date(timestamp).toLocaleString('zh-CN', {
     month: '2-digit',
     day: '2-digit',
     hour: '2-digit',
@@ -213,365 +314,281 @@ const formatTimestamp = (timestamp: number): string => {
 };
 
 /**
- * 获取星级显示
+ * 获取稀有度对应的CSS类
  */
-const getRarityStars = (rarity: number): string => {
+const getRarityClass = (record: Record): string => {
+  // 根据charId或其他逻辑判断稀有度
+  // 这里简单模拟，实际应该根据游戏数据判断
+  const rarity = record.count <= 10 ? 6 : record.count <= 30 ? 5 : 4;
+  return `rarity-${rarity}`;
+};
+
+/**
+ * 获取稀有度星号显示
+ */
+const getRarityStars = (record: Record): string => {
+  // 根据charId或其他逻辑判断稀有度
+  // 这里简单模拟
+  const rarity = record.count <= 10 ? 6 : record.count <= 30 ? 5 : 4;
   return '★'.repeat(rarity);
 };
 
 /**
- * 获取星级颜色
+ * 获取指定稀有度的数量
  */
-const getRarityColor = (rarity: number): string => {
-  const colors = {
-    1: '#8c8c8c', // 1星 - 灰色
-    2: '#4caf50', // 2星 - 绿色
-    3: '#2196f3', // 3星 - 蓝色
-    4: '#9c27b0', // 4星 - 紫色
-    5: '#ff9800', // 5星 - 橙色
-    6: '#ff0000'  // 6星 - 红色
-  };
-  return colors[rarity as keyof typeof colors] || '#8c8c8c';
+const getRarityCount = (records: Record[], rarity: number): number => {
+  // 实际实现需要根据游戏数据判断稀有度
+  // 这里使用count作为模拟
+  return records.filter(record => {
+    if (rarity === 6) return record.count <= 10;
+    if (rarity === 5) return record.count > 10 && record.count <= 30;
+    return record.count > 30;
+  }).length;
 };
 
 /**
- * 刷新数据
+ * 获取新干员数量
  */
-const refreshData = async () => {
-  if (selectedCategory.value) {
-    await loadGachaRecords(selectedCategory.value);
-  } else if (gachaCategories.value.length > 0) {
-    selectedCategory.value = gachaCategories.value[0].category;
-  }
+const getNewOperatorCount = (records: Record[]): number => {
+  return records.filter(record => record.isNew).length;
 };
 
-// ==================== 生命周期 ====================
-onMounted(async () => {
-  if (hasValidCredentials.value && mainUid.value) {
-    await loadGachaCategories();
-  }
-});
+// ==================== 生命周期管理 ====================
 
-// 监听登录状态变化
-watch(() => authStore.isLogin, async (newVal) => {
-  if (newVal && hasValidCredentials.value && mainUid.value) {
-    await loadGachaCategories();
-  } else {
-    // 重置状态
-    gachaCategories.value = [];
-    selectedCategory.value = '';
-    poolRecords.value = {};
-    currentPages.value = {};
-    hasMoreRecords.value = {};
-  }
-});
+onMounted(() => {
+  console.log('HeadhuntingRecord组件挂载');
 
-// 监听选中的分类变化
-watch(selectedCategory, (newCategory) => {
-  if (newCategory) {
-    handleCategoryChange();
+  // 从本地存储加载数据
+  const savedData = localStorage.getItem('gachaData');
+  if (savedData) {
+    try {
+      gachaData.value = JSON.parse(savedData);
+      const savedTime = localStorage.getItem('gachaLastUpdate');
+      lastUpdateTime.value = savedTime ? parseInt(savedTime) : Date.now();
+    } catch (error) {
+      console.error('加载本地数据失败:', error);
+    }
+  }
+
+  // 如果已登录，尝试获取最新数据
+  if (authStore.isLogin) {
+    fetchGachaData();
   }
 });
 </script>
 
-<template>
-  <div class="gacha-history-container">
-    <!-- 头部操作栏 -->
-    <div class="gacha-header">
-      <h2 class="title">抽卡记录查询</h2>
-      <div class="header-actions">
-        <button
-          class="refresh-btn"
-          @click="refreshData"
-          :disabled="isRefreshing || !selectedCategory"
-        >
-          {{ isRefreshing ? '刷新中...' : '刷新数据' }}
-        </button>
-      </div>
-    </div>
-
-    <!-- 错误提示 -->
-    <div v-if="errorMsg" class="error-message">
-      {{ errorMsg }}
-    </div>
-
-    <!-- 未登录提示 -->
-    <div v-if="!authStore.isLogin" class="login-prompt">
-      <div class="prompt-content">
-        <h3>请先登录</h3>
-        <p>登录后即可查看抽卡记录</p>
-      </div>
-    </div>
-
-    <!-- 加载状态 -->
-    <div v-else-if="isLoading" class="loading-container">
-      <div class="spinner"></div>
-      <p>加载卡池分类中...</p>
-    </div>
-
-    <!-- 主内容区域 -->
-    <div v-else class="gacha-content">
-      <!-- 卡池分类选择 -->
-      <div class="category-selector">
-        <label for="category-select">选择卡池分类：</label>
-        <select
-          id="category-select"
-          v-model="selectedCategory"
-          class="category-select"
-          :disabled="gachaCategories.length === 0"
-        >
-          <option value="" disabled>请选择卡池分类</option>
-          <option
-            v-for="category in sortedCategories"
-            :key="category.category"
-            :value="category.category"
-          >
-            {{ category.cateName }} ({{ category.count }} 次)
-          </option>
-        </select>
-      </div>
-
-      <!-- 抽卡记录展示 -->
-      <div v-if="hasData" class="gacha-records">
-        <div
-          v-for="(records, poolName) in poolRecords"
-          :key="poolName"
-          class="pool-section"
-        >
-          <h3 class="pool-title">{{ poolName }}</h3>
-
-          <!-- 抽卡记录表格 -->
-          <div class="records-table-container">
-            <table class="records-table">
-              <thead>
-              <tr>
-                <th width="80">序号</th>
-                <th width="120">时间</th>
-                <th>干员</th>
-                <th width="100">星级</th>
-                <th width="80">状态</th>
-              </tr>
-              </thead>
-              <tbody>
-              <tr
-                v-for="(record, index) in records"
-                :key="`${record.ts}-${index}`"
-                class="record-row"
-              >
-                <td class="index-cell">{{ records.length - index }}</td>
-                <td class="time-cell">{{ formatTimestamp(record.ts) }}</td>
-                <td class="char-cell">
-                  <span class="char-name">{{ record.chars[0]?.name || '未知' }}</span>
-                </td>
-                <td class="rarity-cell">
-                    <span
-                      class="rarity-stars"
-                      :style="{ color: getRarityColor(record.chars[0]?.rarity || 3) }"
-                    >
-                      {{ getRarityStars(record.chars[0]?.rarity || 3) }}
-                    </span>
-                </td>
-                <td class="status-cell">
-                    <span
-                      v-if="record.chars[0]?.isNew"
-                      class="new-badge"
-                    >
-                      新获得
-                    </span>
-                  <span v-else class="duplicate-text">重复</span>
-                </td>
-              </tr>
-              </tbody>
-            </table>
-          </div>
-
-          <!-- 加载更多按钮 -->
-          <div v-if="hasMoreRecords[poolName]" class="load-more-section">
-            <button
-              class="load-more-btn"
-              @click="loadMoreRecords(poolName)"
-              :disabled="isRefreshing"
-            >
-              {{ isRefreshing ? '加载中...' : '加载更多记录' }}
-            </button>
-          </div>
-
-          <!-- 没有更多记录的提示 -->
-          <div v-else-if="records.length > 0" class="no-more-records">
-            <p>已显示所有记录</p>
-          </div>
-        </div>
-      </div>
-
-      <!-- 无数据提示 -->
-      <div v-else-if="selectedCategory && !isRefreshing" class="no-data">
-        <p>暂无抽卡记录数据</p>
-      </div>
-
-      <!-- 等待选择分类提示 -->
-      <div v-else-if="!selectedCategory && gachaCategories.length > 0" class="select-prompt">
-        <p>请选择上方的卡池分类来查看抽卡记录</p>
-      </div>
-    </div>
-  </div>
-</template>
-
 <style scoped>
-.gacha-history-container {
+/* ==================== 容器布局样式 ==================== */
+.headhunting-record-container {
   padding: 20px;
-  max-width: 1200px;
+  max-width: 1400px;
   margin: 0 auto;
   min-height: 100vh;
+  position: relative;
 }
 
-/* 头部样式 */
-.gacha-header {
+/* ==================== 加载状态样式 ==================== */
+.main-loading-container {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  margin-bottom: 24px;
-  padding-bottom: 16px;
-  border-bottom: 1px solid #404040;
-}
-
-.title {
-  color: #9feaf9;
-  font-size: 24px;
-  font-weight: 600;
-  margin: 0;
-}
-
-.header-actions {
-  display: flex;
-  gap: 12px;
-}
-
-.refresh-btn {
-  padding: 8px 16px;
-  background: #646cff;
-  color: white;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 14px;
-  transition: all 0.3s ease;
-}
-
-.refresh-btn:hover:not(:disabled) {
-  background: #535bf2;
-  transform: translateY(-1px);
-}
-
-.refresh-btn:disabled {
-  background: #666;
-  cursor: not-allowed;
-  opacity: 0.6;
-}
-
-/* 错误提示 */
-.error-message {
-  background: #ff4757;
-  color: white;
-  padding: 12px 16px;
-  border-radius: 6px;
-  margin-bottom: 20px;
-  text-align: center;
-}
-
-/* 登录提示 */
-.login-prompt {
-  display: flex;
   justify-content: center;
-  align-items: center;
-  height: 300px;
-  background: #2d2d2d;
-  border-radius: 8px;
-  border: 1px solid #404040;
+  min-height: 60vh;
+  padding: 40px 20px;
 }
 
-.prompt-content {
-  text-align: center;
-}
-
-.prompt-content h3 {
-  color: #9feaf9;
-  margin-bottom: 8px;
-}
-
-.prompt-content p {
-  color: #999;
-}
-
-/* 加载状态 */
-.loading-container {
+.loading-content {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  height: 200px;
-  gap: 16px;
+  gap: 20px;
+  text-align: center;
 }
 
 .spinner {
-  width: 40px;
-  height: 40px;
+  width: 50px;
+  height: 50px;
   border: 4px solid rgba(100, 108, 255, 0.2);
   border-top: 4px solid #646cff;
   border-radius: 50%;
-  animation: spin 1s linear infinite;
+  animation: spin 1.2s linear infinite;
 }
 
-/* 分类选择器 */
-.category-selector {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 24px;
-  padding: 16px;
+.loading-text {
+  font-size: 18px;
+  color: #ccc;
+  font-weight: 500;
+  margin: 0;
+}
+
+/* ==================== 提示信息样式 ==================== */
+.section-card {
   background: #2d2d2d;
   border-radius: 8px;
   border: 1px solid #404040;
+  padding: 40px 20px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  text-align: center;
 }
 
-.category-selector label {
-  color: #ccc;
-  font-weight: 500;
+.section-title {
+  color: #9feaf9;
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 20px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #404040;
 }
 
-.category-select {
-  padding: 8px 12px;
+.login-prompt, .no-data-prompt {
+  text-align: center;
+}
+
+.prompt-text {
+  font-size: 20px;
+  color: #9feaf9;
+  margin-bottom: 16px;
+  font-weight: 600;
+}
+
+.prompt-subtext {
+  font-size: 16px;
+  color: #999;
+  margin-bottom: 24px;
+}
+
+.action-buttons {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+/* ==================== 主内容区域样式 ==================== */
+.cards-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.data-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  background: #2d2d2d;
+  border-radius: 8px;
+  border: 1px solid #404040;
+  margin-bottom: 10px;
+}
+
+.left-section {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex: 1;
+}
+
+.header-buttons {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.update-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.last-update {
+  color: #999;
+  font-size: 14px;
+}
+
+/* ==================== 按钮样式 ==================== */
+.import-btn, .refresh-btn {
+  padding: 8px 16px;
+  border: 1px solid #404040;
+  border-radius: 6px;
   background: #333;
   color: #ccc;
-  border: 1px solid #555;
-  border-radius: 4px;
-  min-width: 200px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-size: 14px;
 }
 
-.category-select:disabled {
+.import-btn:hover:not(:disabled) {
+  background: #4a90e2;
+  color: white;
+  border-color: #4a90e2;
+}
+
+.refresh-btn:hover:not(:disabled) {
+  background: #646cff;
+  color: white;
+  border-color: #646cff;
+}
+
+.import-btn:disabled, .refresh-btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }
 
-/* 卡池区域 */
+/* ==================== 卡池容器样式 ==================== */
+.gacha-pools-container {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
 .pool-section {
   background: #2d2d2d;
   border-radius: 8px;
   border: 1px solid #404040;
-  margin-bottom: 24px;
   overflow: hidden;
 }
 
-.pool-title {
+.pool-header {
+  padding: 16px 20px;
   background: #333;
+  border-bottom: 1px solid #404040;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.pool-title {
   color: #9feaf9;
   font-size: 18px;
   font-weight: 600;
-  padding: 16px 20px;
   margin: 0;
-  border-bottom: 1px solid #404040;
 }
 
-/* 表格容器 */
+.pool-info {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  font-size: 14px;
+  color: #ccc;
+}
+
+.pool-count, .pool-date {
+  color: #999;
+}
+
+.fes-tag {
+  background: #ff6b6b;
+  color: white;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* ==================== 表格样式 ==================== */
 .records-table-container {
   overflow-x: auto;
 }
@@ -585,141 +602,176 @@ watch(selectedCategory, (newCategory) => {
 .records-table th {
   background: #333;
   color: #9feaf9;
+  font-weight: 600;
   padding: 12px 8px;
   text-align: left;
-  font-weight: 600;
-  border-bottom: 1px solid #404040;
+  border-bottom: 2px solid #404040;
+  white-space: nowrap;
 }
 
 .records-table td {
-  padding: 12px 8px;
+  padding: 10px 8px;
   border-bottom: 1px solid #404040;
   color: #ccc;
 }
 
-.record-row:hover {
+.records-table tr:hover {
   background: #3a3a3a;
 }
 
-/* 表格单元格特定样式 */
-.index-cell {
+/* 列宽设置 */
+.col-index {
+  width: 60px;
   text-align: center;
-  color: #999;
-  font-size: 14px;
 }
 
-.time-cell {
-  font-size: 13px;
-  color: #aaa;
+.col-operator {
+  width: 200px;
+  min-width: 150px;
 }
 
-.char-cell {
+.col-rarity {
+  width: 100px;
+  text-align: center;
+}
+
+.col-new {
+  width: 80px;
+  text-align: center;
+}
+
+.col-count {
+  width: 80px;
+  text-align: center;
+}
+
+.col-time {
+  width: 120px;
+  text-align: center;
+  white-space: nowrap;
+}
+
+/* ==================== 稀有度样式 ==================== */
+.rarity-6 {
+  background: linear-gradient(135deg, rgba(255, 215, 0, 0.1), transparent);
+}
+
+.rarity-5 {
+  background: linear-gradient(135deg, rgba(255, 140, 0, 0.1), transparent);
+}
+
+.rarity-4 {
+  background: linear-gradient(135deg, rgba(147, 112, 219, 0.1), transparent);
+}
+
+.rarity-6:hover {
+  background: linear-gradient(135deg, rgba(255, 215, 0, 0.2), rgba(255, 215, 0, 0.1));
+}
+
+.rarity-5:hover {
+  background: linear-gradient(135deg, rgba(255, 140, 0, 0.2), rgba(255, 140, 0, 0.1));
+}
+
+.rarity-4:hover {
+  background: linear-gradient(135deg, rgba(147, 112, 219, 0.2), rgba(147, 112, 219, 0.1));
+}
+
+/* ==================== 表格内容样式 ==================== */
+.operator-name {
   font-weight: 500;
-}
-
-.char-name {
-  color: #fad000;
-}
-
-.rarity-cell {
-  text-align: center;
-}
-
-.rarity-stars {
-  font-weight: bold;
-  font-size: 16px;
-}
-
-.status-cell {
-  text-align: center;
 }
 
 .new-badge {
-  background: #4caf50;
+  background: #ff6b6b;
   color: white;
-  padding: 4px 8px;
-  border-radius: 12px;
+  font-size: 10px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
+.rarity-stars {
+  color: #ffd700;
+  font-weight: 600;
+}
+
+.new-indicator {
+  padding: 2px 6px;
+  border-radius: 4px;
   font-size: 12px;
   font-weight: 500;
 }
 
-.duplicate-text {
-  color: #999;
-  font-size: 12px;
-}
-
-/* 加载更多区域 */
-.load-more-section {
-  padding: 20px;
-  text-align: center;
-  border-top: 1px solid #404040;
-}
-
-.load-more-btn {
-  padding: 10px 20px;
-  background: #646cff;
+.new-indicator.is-new {
+  background: #4caf50;
   color: white;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 14px;
-  transition: all 0.3s ease;
 }
 
-.load-more-btn:hover:not(:disabled) {
-  background: #535bf2;
-  transform: translateY(-1px);
-}
-
-.load-more-btn:disabled {
+.new-indicator.not-new {
   background: #666;
-  cursor: not-allowed;
-  opacity: 0.6;
+  color: #ccc;
 }
 
-/* 无更多记录提示 */
-.no-more-records {
-  padding: 16px;
-  text-align: center;
-  color: #999;
+/* ==================== 统计信息样式 ==================== */
+.pool-stats {
+  padding: 12px 20px;
+  background: #333;
   border-top: 1px solid #404040;
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
 }
 
-/* 无数据提示 */
-.no-data, .select-prompt {
-  text-align: center;
-  padding: 40px 20px;
+.stat-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.stat-label {
   color: #999;
-  background: #2d2d2d;
-  border-radius: 8px;
-  border: 1px solid #404040;
+  font-size: 14px;
 }
 
-/* 动画 */
+.stat-value {
+  color: #9feaf9;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+/* ==================== 动画定义 ==================== */
 @keyframes spin {
   0% { transform: rotate(0deg); }
   100% { transform: rotate(360deg); }
 }
 
-/* 响应式设计 */
+/* ==================== 响应式设计 ==================== */
 @media (max-width: 768px) {
-  .gacha-history-container {
-    padding: 16px;
+  .headhunting-record-container {
+    padding: 10px;
   }
 
-  .gacha-header {
+  .data-header {
     flex-direction: column;
-    gap: 16px;
+    gap: 12px;
     align-items: flex-start;
   }
 
-  .category-selector {
-    flex-direction: column;
-    align-items: flex-start;
+  .header-buttons {
+    align-self: stretch;
+    justify-content: flex-end;
   }
 
-  .category-select {
-    min-width: 100%;
+  .pool-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .pool-info {
+    flex-wrap: wrap;
+    gap: 8px;
   }
 
   .records-table {
@@ -729,6 +781,26 @@ watch(selectedCategory, (newCategory) => {
   .records-table th,
   .records-table td {
     padding: 8px 4px;
+  }
+
+  .col-operator {
+    min-width: 120px;
+  }
+}
+
+@media (max-width: 480px) {
+  .pool-stats {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .action-buttons {
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .import-btn, .refresh-btn {
+    width: 100%;
   }
 }
 </style>

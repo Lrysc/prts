@@ -321,8 +321,17 @@ onMounted(() => {
   authStore.restoreAuthState().then((isRestored) => {
     if (isRestored) {
       console.log('登录状态恢复成功');
-      showSuccess('欢迎回来，博士！');
+      if (authStore.playerData) {
+        showSuccess('欢迎回来，博士！');
+      } else {
+        showInfo('正在同步数据...');
+      }
+    } else {
+      console.log('未找到有效的登录状态');
     }
+  }).catch((error) => {
+    console.error('登录状态恢复失败:', error);
+    // 不显示错误提示，避免每次打开都提示
   });
 });
 
@@ -436,6 +445,12 @@ const componentMap: Record<string, any> = {
                 @click="switchComponent('Material')"
               >
                 材料计算
+              </li>
+              <li
+                :class="['nav-item', { 'nav-item-active': activeComponent === 'HeadhuntingRecord' }]"
+                @click="switchComponent('HeadhuntingRecord')"
+              >
+                寻访记录
               </li>
             </ul>
           </div>

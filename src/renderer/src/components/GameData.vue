@@ -2,17 +2,8 @@
   <div class="game-data-container">
 
     <!-- ==================== 主内容区域 ==================== -->
-
-    <!-- 初始加载状态提示 -->
-    <div class="main-loading-container" v-if="showLoading">
-      <div class="loading-content">
-        <div class="spinner"></div>
-        <p class="loading-text">加载游戏数据中...</p>
-      </div>
-    </div>
-
     <!-- 数据卡片区域 -->
-    <div class="cards-wrapper" v-else>
+    <div class="cards-wrapper">
 
       <!-- 数据头部操作栏 -->
       <div class="data-header">
@@ -140,19 +131,20 @@
       <!-- 游戏战绩卡片 -->
       <div class="section-card" v-if="authStore.isLogin">
         <h3 class="section-title">--- 游戏战绩 ---</h3>
-        <ul class="data-grid">
-          <li class="data-item">
-            <span class="label">集成战略</span>
-            <span class="value">{{ gameDataStore.getRelicCount || '--' }} 收藏品</span>
-          </li>
-        </ul>
+<!--        <ul class="data-grid">-->
+<!--          <li class="data-item">-->
+<!--            <span class="label">集成战略</span>-->
+<!--            <span class="value">{{ gameDataStore.getRelicCount || '&#45;&#45;' }} 收藏品</span>-->
+<!--          </li>-->
+<!--        </ul>-->
+        <h3 class="section-title">功能开发中</h3>
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed, watch, inject } from 'vue';
+import { ref, onMounted, watch, inject } from 'vue';
 import { useAuthStore } from '@stores/auth';
 import { useGameDataStore } from '@stores/gameData';
 import { AuthAPI } from '@services/api';
@@ -188,23 +180,6 @@ const refreshData = inject('refreshData') as (() => Promise<void>) | undefined;
  * 用于判断当前是否在GameData页面
  */
 const currentActiveComponent = inject('currentActiveComponent') as { value: string };
-
-// ==================== 计算属性定义 ====================
-/**
- * 数据存在状态计算属性
- * 用于判断是否已经成功加载了游戏数据
- */
-const hasGameData = computed(() => {
-  return !!gameDataStore.playerData && Object.keys(gameDataStore.playerData).length > 0;
-});
-
-/**
- * 是否显示加载状态
- * 只在初始加载且没有数据时显示
- */
-const showLoading = computed(() => {
-  return gameDataStore.isLoading && !hasGameData.value;
-});
 
 // ==================== 组件状态管理 ====================
 
@@ -403,40 +378,6 @@ defineExpose({
   min-height: 100vh;
   position: relative;
   user-select: none; /* 防止文本选中干扰用户体验 */
-}
-
-/* ==================== 主要区域加载状态样式 ==================== */
-.main-loading-container {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 60vh; /* 占据主要区域的高度 */
-  padding: 40px 20px;
-}
-
-.loading-content {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 20px;
-  text-align: center;
-}
-
-.spinner {
-  width: 50px;
-  height: 50px;
-  border: 4px solid rgba(100, 108, 255, 0.2);
-  border-top: 4px solid #646cff;
-  border-radius: 50%;
-  animation: spin 1.2s linear infinite;
-}
-
-.loading-text {
-  font-size: 18px;
-  color: #ccc;
-  font-weight: 500;
-  margin: 0;
 }
 
 /* ==================== 主内容区域样式 ==================== */
@@ -709,19 +650,6 @@ defineExpose({
 @media (max-width: 480px) {
   .data-grid {
     grid-template-columns: 1fr;
-  }
-
-  .main-loading-container {
-    min-height: 50vh;
-  }
-
-  .loading-text {
-    font-size: 16px;
-  }
-
-  .spinner {
-    width: 40px;
-    height: 40px;
   }
 }
 </style>

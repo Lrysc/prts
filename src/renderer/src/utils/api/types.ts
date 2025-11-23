@@ -143,3 +143,5 @@ export interface ApInfo {
   remainSecs: number;
   recoverTime: number;
 }
+
+// 寻访记录相关类型
