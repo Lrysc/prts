@@ -5,6 +5,7 @@ import Material from '@components/Material.vue'
 import LoginWindow from '@components/LoginWindow.vue'
 import Setting from '@components/Setting.vue'
 import ToastNotification from '@components/ToastNotification.vue'
+// import HeadhuntingRecord from '@components/headhuntingrecord.vue'
 import { useAuthStore } from '@stores/auth'
 import { useGameDataStore } from '@stores/gameData'
 import { ref, onMounted, onUnmounted, provide, computed } from 'vue'
@@ -320,17 +321,17 @@ onMounted(() => {
   // 初始化认证状态
   authStore.restoreAuthState().then((isRestored) => {
     if (isRestored) {
-      console.log('登录状态恢复成功');
+      console.log('神经连接成功');
       if (authStore.playerData) {
         showSuccess('欢迎回来，博士！');
       } else {
-        showInfo('正在同步数据...');
+        showInfo('正在同步神经中枢...');
       }
     } else {
-      console.log('未找到有效的登录状态');
+      console.log('未找到相关记忆');
     }
   }).catch((error) => {
-    console.error('登录状态恢复失败:', error);
+    console.error('神经同步失败:', error);
     // 不显示错误提示，避免每次打开都提示
   });
 });
@@ -359,6 +360,7 @@ const componentMap: Record<string, any> = {
   'GameData': GameData,
   'Recruit': Recruit,
   'Material': Material,
+  // 'HeadhuntingRecord': HeadhuntingRecord,
   'Setting': Setting
 };
 </script>

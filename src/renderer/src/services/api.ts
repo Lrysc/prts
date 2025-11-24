@@ -600,18 +600,41 @@ export const GachaAPI = {
     signToken: string,
     uid: string
   ): Promise<GachaCategory[]> => {
-    const url = `${API_BASE.skland}/user/api/inquiry/gacha/cate?uid=${uid}`;
-    const headers = getSignedHeaders(url, 'GET', null, cred, signToken);
+    // 尝试多个可能的API路径
+    const possibleUrls = [
+      `${API_BASE.skland}/api/v1/gacha/cate?uid=${uid}`,
+      `${API_BASE.skland}/api/v2/gacha/cate?uid=${uid}`,
+      `${API_BASE.skland}/gacha/api/v1/cate?uid=${uid}`,
+      `${API_BASE.skland}/user/api/v1/gacha/cate?uid=${uid}`,
+      `${API_BASE.skland}/api/v1/user/gacha/cate?uid=${uid}`
+    ];
 
-    console.log('获取卡池分类请求头:', headers);
+    let lastError: Error | null = null;
 
-    const response = await fetch(url, {
-      method: 'GET',
-      headers
-    });
+    for (const url of possibleUrls) {
+      try {
+        console.log(`尝试获取卡池分类，URL: ${url}`);
+        const headers = getSignedHeaders(url, 'GET', null, cred, signToken);
+        console.log('获取卡池分类请求头:', headers);
 
-    const data = await handleApiResponse(response, '获取卡池分类');
-    return data.data;
+        const response = await fetch(url, {
+          method: 'GET',
+          headers
+        });
+
+        const data = await handleApiResponse(response, '获取卡池分类');
+        console.log(`成功获取卡池分类，使用URL: ${url}`);
+        return data.data;
+      } catch (error) {
+        console.log(`URL ${url} 失败:`, error);
+        lastError = error as Error;
+        continue;
+      }
+    }
+
+    // 所有URL都失败了
+    console.error('所有可能的抽卡API路径都失败了');
+    throw lastError || new Error('获取卡池分类失败');
   },
 
   /**
@@ -631,18 +654,41 @@ export const GachaAPI = {
     category: string,
     size: number = 20
   ): Promise<GachaRecordsResponse> => {
-    const url = `${API_BASE.skland}/user/api/inquiry/gacha/history?uid=${uid}&category=${category}&size=${size}`;
-    const headers = getSignedHeaders(url, 'GET', null, cred, signToken);
+    // 尝试多个可能的API路径
+    const possibleUrls = [
+      `${API_BASE.skland}/api/v1/gacha/history?uid=${uid}&category=${category}&size=${size}`,
+      `${API_BASE.skland}/api/v2/gacha/history?uid=${uid}&category=${category}&size=${size}`,
+      `${API_BASE.skland}/gacha/api/v1/history?uid=${uid}&category=${category}&size=${size}`,
+      `${API_BASE.skland}/user/api/v1/gacha/history?uid=${uid}&category=${category}&size=${size}`,
+      `${API_BASE.skland}/api/v1/user/gacha/history?uid=${uid}&category=${category}&size=${size}`
+    ];
 
-    console.log('获取抽卡记录请求头:', headers);
+    let lastError: Error | null = null;
 
-    const response = await fetch(url, {
-      method: 'GET',
-      headers
-    });
+    for (const url of possibleUrls) {
+      try {
+        console.log(`尝试获取抽卡记录，URL: ${url}`);
+        const headers = getSignedHeaders(url, 'GET', null, cred, signToken);
+        console.log('获取抽卡记录请求头:', headers);
 
-    const data = await handleApiResponse(response, '获取抽卡记录');
-    return data.data;
+        const response = await fetch(url, {
+          method: 'GET',
+          headers
+        });
+
+        const data = await handleApiResponse(response, '获取抽卡记录');
+        console.log(`成功获取抽卡记录，使用URL: ${url}`);
+        return data.data;
+      } catch (error) {
+        console.log(`URL ${url} 失败:`, error);
+        lastError = error as Error;
+        continue;
+      }
+    }
+
+    // 所有URL都失败了
+    console.error('所有可能的抽卡记录API路径都失败了');
+    throw lastError || new Error('获取抽卡记录失败');
   },
 
   /**
@@ -666,18 +712,41 @@ export const GachaAPI = {
     pos: number = 1,
     size: number = 20
   ): Promise<GachaRecordsResponse> => {
-    const url = `${API_BASE.skland}/user/api/inquiry/gacha/history?uid=${uid}&category=${category}&pos=${pos}&gachaTs=${gachaTs}&size=${size}`;
-    const headers = getSignedHeaders(url, 'GET', null, cred, signToken);
+    // 尝试多个可能的API路径
+    const possibleUrls = [
+      `${API_BASE.skland}/api/v1/gacha/history?uid=${uid}&category=${category}&pos=${pos}&gachaTs=${gachaTs}&size=${size}`,
+      `${API_BASE.skland}/api/v2/gacha/history?uid=${uid}&category=${category}&pos=${pos}&gachaTs=${gachaTs}&size=${size}`,
+      `${API_BASE.skland}/gacha/api/v1/history?uid=${uid}&category=${category}&pos=${pos}&gachaTs=${gachaTs}&size=${size}`,
+      `${API_BASE.skland}/user/api/v1/gacha/history?uid=${uid}&category=${category}&pos=${pos}&gachaTs=${gachaTs}&size=${size}`,
+      `${API_BASE.skland}/api/v1/user/gacha/history?uid=${uid}&category=${category}&pos=${pos}&gachaTs=${gachaTs}&size=${size}`
+    ];
 
-    console.log('获取更多抽卡记录请求头:', headers);
+    let lastError: Error | null = null;
 
-    const response = await fetch(url, {
-      method: 'GET',
-      headers
-    });
+    for (const url of possibleUrls) {
+      try {
+        console.log(`尝试获取更多抽卡记录，URL: ${url}`);
+        const headers = getSignedHeaders(url, 'GET', null, cred, signToken);
+        console.log('获取更多抽卡记录请求头:', headers);
 
-    const data = await handleApiResponse(response, '获取更多抽卡记录');
-    return data.data;
+        const response = await fetch(url, {
+          method: 'GET',
+          headers
+        });
+
+        const data = await handleApiResponse(response, '获取更多抽卡记录');
+        console.log(`成功获取更多抽卡记录，使用URL: ${url}`);
+        return data.data;
+      } catch (error) {
+        console.log(`URL ${url} 失败:`, error);
+        lastError = error as Error;
+        continue;
+      }
+    }
+
+    // 所有URL都失败了
+    console.error('所有可能的更多抽卡记录API路径都失败了');
+    throw lastError || new Error('获取更多抽卡记录失败');
   }
 };
 

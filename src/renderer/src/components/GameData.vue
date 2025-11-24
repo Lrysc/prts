@@ -111,7 +111,7 @@
           </li>
           <li class="data-item">
             <span class="label">干员疲劳</span>
-            <span class="value">{{ gameDataStore.getTiredCharsCount || '--' }} 人</span>
+            <span class="value">{{ gameDataStore.getTiredCharsCount || '0' }} 人</span>
           </li>
           <li class="data-item">
             <span class="label">无人机</span>
@@ -130,7 +130,7 @@
 
       <!-- 游戏战绩卡片 -->
       <div class="section-card" v-if="authStore.isLogin">
-        <h3 class="section-title">--- 游戏战绩 ---</h3>
+        <h3 class="section-title">--- 肉鸽成绩 ---</h3>
 <!--        <ul class="data-grid">-->
 <!--          <li class="data-item">-->
 <!--            <span class="label">集成战略</span>-->
@@ -284,9 +284,7 @@ const handleManualRefresh = async () => {
   } else {
     // 如果全局刷新方法不可用，使用本地刷新
     try {
-      showInfo('神经连接中...');
       await gameDataStore.refreshData();
-      showSuccess('神经连接同步完成！');
     } catch (error: any) {
       const errorMessage = error?.message || '未知错误';
       console.error('刷新数据失败:', error);
@@ -315,7 +313,7 @@ onMounted(async () => {
       if (isRestored) {
         console.log('登录状态恢复成功，加载游戏数据');
         await gameDataStore.fetchGameData();
-        showSuccess('欢迎回来，博士！');
+        // showSuccess('欢迎回来，博士！');
       } else {
         console.log('登录状态恢复失败，显示未登录状态');
         // 不设置loading状态，让组件正常显示未登录状态

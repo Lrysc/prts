@@ -1,6 +1,5 @@
 <template>
   <div class="setting-container">
-
     <div class="setting-content">
       <!-- 用户信息展示 -->
       <div class="user-info-section" v-if="authStore.isLogin">
@@ -36,16 +35,17 @@
               </span>
             </p>
             <p class="login-status">状态: <span class="status-online">已登录</span></p>
+            <span class="registerTs">
+              <span class="label">入职日期:
+              <span class="value">{{ gameDataStore.formatTimestamp(gameDataStore.playerData?.status?.registerTs) || '--' }}</span>
+              </span>
+            </span>
           </div>
         </div>
 
-        <!-- 基本信息卡片 - 已融入账号信息板块 -->
+        <!-- 基本信息卡片 -->
         <div class="basic-info-card">
           <ul class="data-grid">
-            <li class="data-item">
-              <span class="label">入职日期</span>
-              <span class="value">{{ gameDataStore.formatTimestamp(gameDataStore.playerData?.status?.registerTs) || '--' }}</span>
-            </li>
             <li class="data-item">
               <span class="label">作战进度</span>
               <span class="value">{{ gameDataStore.getMainStageProgress || '--' }}</span>
@@ -65,39 +65,71 @@
           </ul>
         </div>
 
-        <!-- 助战干员板块 - 从gamedata迁移过来 -->
+        <!-- 助战干员板块 - 居中横向排列 -->
         <div class="assist-chars-section" v-if="authStore.isLogin">
           <h3>助战干员</h3>
           <div class="assist-chars-card">
-            <div class="assist-chars-grid">
+            <!-- 居中横向排列 -->
+            <div class="assist-chars-container">
               <div
                 v-for="(char, index) in gameDataStore.getAssistCharArrayStatus"
                 :key="index"
-                class="assist-char-item"
+                class="assist-char-wrapper"
               >
-                <!-- 左边：头像 -->
-                <div class="char-avatar-container">
-                  <img
-                    :src="char.avatarUrl"
-                    :alt="char.name"
-                    class="char-avatar"
-                    @error="(event) => gameDataStore.handleOperatorAvatarError(char.charId, event)"
-                    @load="() => gameDataStore.handleOperatorAvatarLoad(char.charId)"
-                  />
-                </div>
+                <!-- 单个干员容器，包含半身像和详细信息 -->
+                <div class="assist-char-item">
+                  <!-- 半身像容器 -->
+                  <div class="char-portrait-container">
+                    <img
+                      :src="char.portraitUrl"
+                      :alt="char.name"
+                      class="char-portrait"
+                      @error="(event) => gameDataStore.handleOperatorImageError(char.charId, 'portrait', event)"
+                      @load="() => gameDataStore.handleOperatorImageLoad(char.charId, 'portrait')"
+                    />
 
-                <!-- 右边：干员信息 -->
-                <div class="char-info-container">
-                  <div class="char-name">{{ char.name }}</div>
-                  <div class="char-level">{{ char.level }}</div>
-                  <div class="char-skill">{{ char.skill }}</div>
+                    <!-- 交叉淡化遮罩 -->
+                    <div class="portrait-fade-mask"></div>
+                  </div>
+
+                  <!-- 干员信息 - 显示在半身像下方，带淡入效果 -->
+                  <div class="char-details">
+                    <div class="char-name">{{ char.name }}</div>
+
+                    <div class="char-level-line">
+                      <span v-if="char.evolvePhase > 0" class="char-elite">精{{ char.evolvePhase === 1 ? '一' : '二' }}</span>
+                      <span class="char-level">Lv.{{ char.level }}</span>
+                      <span class="char-potential">{{ char.potentialRank === 5 ? '满' : char.potentialRank }}潜能</span>
+                    </div>
+
+                    <div class="char-skill-line">
+                      <span class="char-skill">{{ char.mainSkillLvl }}级{{ char.skillNumber}}技能</span>
+                      <span v-if="char.specializeLevel > 0" class="char-skill-level">专{{ char.specializeLevel }}</span>
+                      <span v-else class="char-skill-level">无专精</span>
+                    </div>
+
+                    <div class="char-module">
+                      {{ char.specializeLevel > 0 ? `模组${char.specializeLevel}级` : '未开启模组' }}
+                    </div>
+                  </div>
                 </div>
               </div>
-              <div v-if="!gameDataStore.getAssistCharArrayStatus || gameDataStore.getAssistCharArrayStatus.length === 0" class="no-assist-char">
-                无助战干员
+
+              <!-- 无助战干员状态 -->
+              <div v-if="!gameDataStore.getAssistCharArrayStatus || gameDataStore.getAssistCharArrayStatus.length === 0" class="no-assist-wrapper">
+                <div class="no-assist-char">
+                  <div class="no-char-portrait">
+                    <img src="@assets/avatar/Avatar_def_01.png" alt="无助战干员" class="empty-portrait" />
+                  </div>
+                  <div class="no-char-text">无助战干员</div>
+                </div>
               </div>
             </div>
-            <div class="assist-count">共 {{ gameDataStore.getAssistCharCount || 0 }} 名助战干员</div>
+
+            <!-- 助战干员统计 -->
+            <div class="assist-stats">
+              <span class="assist-count">共 {{ gameDataStore.getAssistCharCount || 0 }} 名助战干员</span>
+            </div>
           </div>
         </div>
       </div>
@@ -274,7 +306,7 @@ const lastLogTime = computed(() => {
 
 /**
  * 高可靠性的复制到剪贴板函数
- * 使用现代 Clipboard API，移除弃用的 execCommand
+ * 结合多种方法确保复制成功
  */
 const copyToClipboard = async (text: string, itemName: string = '内容'): Promise<boolean> => {
   if (!text || text.trim() === '') {
@@ -294,12 +326,12 @@ const copyToClipboard = async (text: string, itemName: string = '内容'): Promi
     }
   }
 
-  // 方法2: 使用备选方案 - 创建临时textarea让用户手动复制
+  // 方法2: 使用textarea元素和execCommand（兼容方案）
   try {
     const textArea = document.createElement('textarea')
     textArea.value = text
 
-    // 设置样式确保元素不可见但可选择
+    // 确保元素在视口外但可聚焦
     textArea.style.position = 'fixed'
     textArea.style.top = '0'
     textArea.style.left = '0'
@@ -312,28 +344,75 @@ const copyToClipboard = async (text: string, itemName: string = '内容'): Promi
     textArea.style.background = 'transparent'
     textArea.style.opacity = '0'
     textArea.style.zIndex = '-1'
-    textArea.style.pointerEvents = 'none'
 
     document.body.appendChild(textArea)
 
-    // 选择文本
+    // 选择文本 - 使用更兼容的方式
     textArea.focus()
     textArea.select()
-    textArea.setSelectionRange(0, textArea.value.length)
 
-    // 在现代浏览器中，用户可以通过快捷键复制已选择的文本
-    console.log(`📋 ${itemName}已自动选择，请使用Ctrl+C手动复制`)
+    // 尝试使用setSelectionRange作为备选
+    try {
+      textArea.setSelectionRange(0, textArea.value.length)
+    } catch (e) {
+      console.warn('setSelectionRange失败:', e)
+    }
 
-    // 短暂显示后移除元素
-    setTimeout(() => {
-      document.body.removeChild(textArea)
-    }, 1000)
+    // 执行复制命令
+    const successful = document.execCommand('copy')
+    document.body.removeChild(textArea)
 
-    return false // 返回false表示需要用户手动操作
+    if (successful) {
+      console.log(`✅ 使用execCommand复制${itemName}成功`)
+      return true
+    } else {
+      console.warn(`❌ 使用execCommand复制${itemName}失败`)
+      return false
+    }
   } catch (error) {
-    console.error(`备选复制方案失败:`, error)
-    return false
+    console.error(`execCommand复制失败:`, error)
+    // 继续尝试最后的方法
   }
+
+  // 方法3: 使用contenteditable div作为最后手段
+  try {
+    const div = document.createElement('div')
+    div.contentEditable = 'true'
+    div.textContent = text
+    div.style.position = 'fixed'
+    div.style.top = '0'
+    div.style.left = '0'
+    div.style.opacity = '0'
+    div.style.zIndex = '-1'
+
+    document.body.appendChild(div)
+
+    // 选择div内容
+    const range = document.createRange()
+    range.selectNodeContents(div)
+    const selection = window.getSelection()
+    if (selection) {
+      selection.removeAllRanges()
+      selection.addRange(range)
+    }
+
+    // 尝试复制
+    const successful = document.execCommand('copy')
+    if (selection) {
+      selection.removeAllRanges()
+    }
+    document.body.removeChild(div)
+
+    if (successful) {
+      console.log(`✅ 使用contenteditable复制${itemName}成功`)
+      return true
+    }
+  } catch (error) {
+    console.error(`contenteditable复制失败:`, error)
+  }
+
+  console.error(`❌ 所有复制方法都失败了`)
+  return false
 }
 
 /**
@@ -347,7 +426,7 @@ const forceCopyToClipboard = async (text: string, itemName: string = '内容'): 
     return true
   }
 
-  // 如果现代方法失败，提供手动复制选项
+  // 如果常规复制失败，提供手动复制选项
   console.log(`常规复制失败，提供手动复制选项`)
 
   // 对于短文本，直接显示在提示中让用户手动复制
@@ -370,12 +449,13 @@ const forceCopyToClipboard = async (text: string, itemName: string = '内容'): 
   return false
 }
 
+
 /**
  * 处理UID复制 - 使用强制复制
  */
 const handleCopyUid = async () => {
   const uid = gameDataStore.gameUid
-  if (!uid || uid === '??') {
+  if (!uid || uid === '未获取') {
     showError('UID不可用，无法复制')
     return
   }
@@ -401,7 +481,7 @@ const handleCopyUid = async () => {
  */
 const copyNickname = async () => {
   const nickname = authStore.userName
-  if (!nickname || nickname === '??' || nickname === '未知用户') {
+  if (!nickname || nickname === '未获取' || nickname === '未知用户') {
     showError('昵称不可用，无法复制')
     return
   }
@@ -457,7 +537,7 @@ const copyLogsToClipboard = async () => {
   }
 }
 
-// ==================== 其他现有方法 ====================
+// ==================== 其他方法 ====================
 
 /**
  * 加载日志数据
@@ -647,7 +727,7 @@ onMounted(() => {
 }
 
 .setting-content {
-  max-width: 500px;
+  max-width: 1000px;
   margin: 0 auto;
 }
 
@@ -669,8 +749,8 @@ onMounted(() => {
 .user-card {
   display: flex;
   align-items: center;
-  gap: 20px; /* 增加间距 */
-  padding: 20px; /* 增加内边距 */
+  gap: 20px;
+  padding: 20px;
   background: #3a3a3a;
   border-radius: 6px;
   border: 1px solid #4a4a4a;
@@ -703,7 +783,7 @@ onMounted(() => {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 8px; /* 增加元素间距 */
+  gap: 8px;
 }
 
 .user-name {
@@ -712,7 +792,7 @@ onMounted(() => {
   font-size: 16px;
   cursor: pointer;
   transition: color 0.2s ease;
-  margin-bottom: 4px; /* 增加底部间距 */
+  margin-bottom: 4px;
 }
 
 .user-name:hover {
@@ -721,8 +801,8 @@ onMounted(() => {
 
 .user-level, .user-uid, .login-status {
   color: #ccc;
-  font-size: 12px;
-  line-height: 1.4; /* 增加行高 */
+  font-size: 14px;
+  line-height: 1.4;
 }
 
 /* UID复制样式 */
@@ -734,12 +814,11 @@ onMounted(() => {
   transition: all 0.2s ease;
   border: 1px solid transparent;
   user-select: none;
-  margin-left: 4px; /* 增加左边距 */
+  margin-left: 4px;
 }
 
 .uid-value.copyable:hover {
-  background: rgba(159, 234, 249, 0.1);
-  border-color: #9feaf9;
+  color: #4a90e2;
 }
 
 .status-online {
@@ -784,7 +863,7 @@ onMounted(() => {
 .label {
   font-size: 12px;
   color: #999;
-  margin-bottom: 6px; /* 增加标签和值的间距 */
+  margin-bottom: 6px;
   font-weight: 500;
 }
 
@@ -794,7 +873,7 @@ onMounted(() => {
   font-weight: 600;
 }
 
-/* 助战干员板块样式 - 新增 */
+/* 助战干员板块样式 - 居中横向排列 */
 .assist-chars-section {
   margin-bottom: 15px;
 }
@@ -812,93 +891,254 @@ onMounted(() => {
   padding: 15px;
 }
 
-.assist-chars-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 16px;
+/* 助战干员容器 - 居中横向排列 */
+.assist-chars-container {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 20px;
   margin-bottom: 12px;
+  width: 100%;
 }
 
+/* 单个干员包装器 */
+.assist-char-wrapper {
+  display: flex;
+  flex-direction: column;
+}
+
+/* 助战干员卡片 - 作为一个整体容器 */
 .assist-char-item {
   background: #333333;
   border: 1px solid #404040;
   border-radius: 8px;
-  padding: 12px;
+  padding: 8px;
   display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  transition: all 0.3s ease;
-  min-height: 80px;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  width: 180px;
+  min-height: 180px;
+  overflow: hidden;
+  cursor: pointer;
 }
 
 .assist-char-item:hover {
-  background: #3a3a3a;
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-}
-
-/* 左边：头像容器 */
-.char-avatar-container {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.char-avatar {
-  width: 60px;
-  height: 60px;
-  object-fit: cover;
-  border: 2px solid #404040;
   background: #2d2d2d;
+  min-height: 300px;
+  z-index: 10;
+  box-shadow:
+    0 12px 30px rgba(0, 0, 0, 0.4),
+    0 6px 15px rgba(0, 0, 0, 0.3),
+    0 0 0 1px rgba(159, 234, 249, 0.3);
+  transform: scale(1.02);
 }
 
-/* 右边：信息容器 */
-.char-info-container {
-  flex: 1;
+/* 半身像容器 - 带交叉淡化效果 */
+.char-portrait-container {
+  position: relative;
+  width: 100px;
+  height: 120px;
+  display: flex;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 4px;
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* 交叉淡化遮罩 */
+.portrait-fade-mask {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 40px;
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    rgba(51, 51, 51, 0.8) 50%,
+    rgba(51, 51, 51, 1) 100%
+  );
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  pointer-events: none;
+  opacity: 1;
+}
+
+.assist-char-item:hover .portrait-fade-mask {
+  opacity: 0;
+  height: 0;
+}
+
+.assist-char-item:hover .char-portrait-container {
+  height: 200px;
+  transform: scale(1.05);
+}
+
+.char-portrait {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top center;
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.assist-char-item:hover .char-portrait {
+  object-position: center center;
+  transform: scale(1.1);
+}
+
+/* 干员信息详情 - 带交叉淡化效果 */
+.char-details {
+  width: 100%;
   display: flex;
   flex-direction: column;
   gap: 4px;
-  min-width: 0; /* 防止文本溢出 */
+  text-align: center;
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.assist-char-item:hover .char-details {
+  opacity: 0.9;
+  transform: translateY(8px);
 }
 
 .char-name {
-  font-size: 16px;
+  font-size: 20px;
   font-weight: 600;
   color: #9feaf9;
   line-height: 1.2;
+  margin-bottom: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: all 0.3s ease;
+}
+
+.assist-char-item:hover .char-name {
+  color: #ffffff;
+  text-shadow: 0 0 8px rgba(159, 234, 249, 0.5);
+}
+
+/* 基础信息行 */
+.char-level-line {
+  display: flex;
+  justify-content: center;
+  gap: 4px;
+  font-size: 18px;
+  line-height: 1.2;
+  flex-wrap: wrap;
+  transition: all 0.3s ease;
 }
 
 .char-level {
-  font-size: 13px;
   color: #fad000;
+  font-weight: 500;
+}
+
+.char-elite {
+  color: #ffa726;
+  font-weight: 500;
+}
+
+.char-potential {
+  color: #ff6b6b;
+  font-weight: 500;
+}
+
+/* 技能信息行 */
+.char-skill-line {
+  display: flex;
+  justify-content: center;
+  gap: 4px;
+  font-size: 16px;
   line-height: 1.2;
+  flex-wrap: wrap;
+  transition: all 0.3s ease;
 }
 
 .char-skill {
-  font-size: 12px;
   color: #6cc24a;
+}
+
+.char-skill-level {
+  color: #ffa726;
+}
+
+/* 模组信息 */
+.char-module {
+  font-size: 14px;
+  color: #ba68c8;
+  background: rgba(186, 104, 200, 0.1);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-weight: 500;
   line-height: 1.2;
+  transition: all 0.3s ease;
+}
+
+.assist-char-item:hover .char-module {
+  background: rgba(186, 104, 200, 0.3);
+  transform: scale(1.05);
+}
+
+/* 无助战干员状态 */
+.no-assist-wrapper {
+  display: flex;
+  justify-content: center;
 }
 
 .no-assist-char {
-  grid-column: 1 / -1;
-  text-align: center;
-  color: #999;
-  font-size: 14px;
-  padding: 40px 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 20px;
   background: #333333;
   border: 1px solid #404040;
   border-radius: 8px;
+  width: 120px;
+}
+
+.no-char-portrait {
+  width: 60px;
+  height: 72px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #2d2d2d;
+  border-radius: 6px;
+  border: 2px solid #404040;
+  overflow: hidden;
+}
+
+.empty-portrait {
+  width: 30px;
+  height: 30px;
+  opacity: 0.5;
+}
+
+.no-char-text {
+  color: #999;
+  font-size: 12px;
+}
+
+/* 助战统计 */
+.assist-stats {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding-top: 12px;
+  border-top: 1px solid #404040;
+  font-size: 12px;
 }
 
 .assist-count {
-  text-align: center;
-  font-size: 12px;
-  color: #666;
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px solid #404040;
+  color: #ccc;
 }
 
 /* 未登录状态 */
@@ -1146,7 +1386,7 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 20px;
-  min-height: 0; /* 重要：允许内容收缩 */
+  min-height: 0;
   overflow: hidden;
 }
 
@@ -1171,7 +1411,7 @@ onMounted(() => {
   font-family: 'Courier New', monospace;
   font-size: 13px;
   line-height: 1.5;
-  resize: none; /* 禁用手动调整大小 */
+  resize: none;
   outline: none;
   overflow: auto;
   box-sizing: border-box;
@@ -1266,12 +1506,10 @@ onMounted(() => {
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
 }
 
-/* 打开动画 - 机械式水平扩展 */
 .custom-modal-content.opening {
   animation: mechanicalExpand 0.4s cubic-bezier(0.4, 0, 0.2, 1) forwards;
 }
 
-/* 关闭动画 - 机械式水平收缩 */
 .custom-modal-content.closing {
   animation: mechanicalCollapse 0.4s cubic-bezier(0.4, 0, 0.2, 1) forwards;
 }
@@ -1406,7 +1644,7 @@ onMounted(() => {
 }
 
 /* 响应式设计 */
-@media (max-width: 480px) {
+@media (max-width: 768px) {
   .setting-container {
     padding: 15px;
   }
@@ -1418,90 +1656,93 @@ onMounted(() => {
   .user-card {
     flex-direction: column;
     text-align: center;
-    gap: 15px; /* 移动端也保持适当间距 */
+    gap: 15px;
   }
 
   .user-details {
     width: 100%;
-    gap: 6px; /* 移动端稍微减少间距 */
+    gap: 6px;
   }
 
   .data-grid {
     grid-template-columns: 1fr;
   }
 
-  .assist-chars-grid {
-    grid-template-columns: 1fr;
+  /* 移动端助战干员布局调整 */
+  .assist-chars-container {
+    gap: 15px;
+    justify-content: center;
   }
 
-  .modal-content {
-    width: 95%;
-    margin: 10px;
+  .assist-char-item {
+    width: 110px;
+    min-height: 170px;
   }
 
-  .modal-actions {
-    flex-direction: column;
+  .assist-char-item:hover {
+    min-height: 280px;
   }
 
-  .custom-modal-content {
-    width: 95%;
-    margin: 10px;
+  .char-portrait-container {
+    width: 90px;
+    height: 108px;
   }
 
-  .custom-modal-actions {
-    flex-direction: column;
+  .assist-char-item:hover .char-portrait-container {
+    height: 180px;
   }
 
-  .custom-modal-btn {
-    width: 100%;
+  .no-assist-char {
+    width: 110px;
+  }
+}
+
+@media (max-width: 480px) {
+  .assist-chars-container {
+    gap: 10px;
   }
 
-  /* 移动端动画调整 */
-  @keyframes mechanicalExpand {
-    0% {
-      opacity: 0;
-      transform: scaleX(0) scaleY(0.1);
-      width: 0;
-      height: 4px;
-      border-radius: 2px;
-    }
-    50% {
-      opacity: 1;
-      transform: scaleX(1) scaleY(0.1);
-      width: 95%;
-      height: 4px;
-      border-radius: 2px;
-    }
-    100% {
-      transform: scaleX(1) scaleY(1);
-      width: 95%;
-      height: auto;
-      border-radius: 8px;
-    }
+  .assist-char-item {
+    width: 100px;
+    min-height: 160px;
+    padding: 6px;
   }
 
-  @keyframes mechanicalCollapse {
-    0% {
-      transform: scaleX(1) scaleY(1);
-      width: 95%;
-      height: auto;
-      border-radius: 8px;
-      opacity: 1;
-    }
-    50% {
-      transform: scaleX(1) scaleY(0.1);
-      width: 95%;
-      height: 4px;
-      border-radius: 2px;
-      opacity: 0.7;
-    }
-    100% {
-      opacity: 0;
-      transform: scaleX(0) scaleY(0.1);
-      width: 0;
-      height: 4px;
-      border-radius: 2px;
-    }
+  .assist-char-item:hover {
+    min-height: 260px;
+    transform: scale(1.02);
+  }
+
+  .char-portrait-container {
+    width: 80px;
+    height: 96px;
+  }
+
+  .assist-char-item:hover .char-portrait-container {
+    height: 160px;
+  }
+
+  .char-name {
+    font-size: 12px;
+  }
+
+  .char-level-line,
+  .char-skill-line {
+    font-size: 9px;
+  }
+
+  .char-module {
+    font-size: 8px;
+  }
+
+  .no-assist-char {
+    width: 100px;
+    padding: 15px;
+  }
+
+  .no-char-portrait {
+    width: 50px;
+    height: 60px;
   }
 }
 </style>

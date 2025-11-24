@@ -143,6 +143,7 @@
 import { ref, onMounted, computed, inject } from 'vue';
 import { useAuthStore } from '@stores/auth';
 import { showSuccess, showError, showInfo } from '@services/toastService';
+import { GachaAPI, type GachaCategory, type GachaRecord, type GachaRecordsResponse } from '@services/api';
 
 // ==================== 类型定义 ====================
 interface Record {
@@ -150,12 +151,13 @@ interface Record {
   name: string;
   charId: string;
   isNew: boolean;
-  count: number;
+  rarity: number;
   ts: number;
 }
 
 interface GachaPool {
   pool: string;
+  category: string;
   count: number;
   ts: number;
   isFes: boolean;
@@ -256,33 +258,165 @@ const handleRefresh = async () => {
  * 获取抽卡数据
  */
 const fetchGachaData = async () => {
-  if (!authStore.isLogin) return;
+  if (!authStore.isLogin) {
+    showError('请先登录森空岛账号');
+    return;
+  }
 
   isLoading.value = true;
 
   try {
-    // 这里应该调用实际的API
-    // const response = await GachaAPI.getGachaRecords(authStore.userId);
-    // gachaData.value = processGachaData(response.data);
+    console.log('开始获取抽卡数据...');
+    
+    // 获取森空岛凭证
+    const { cred, token } = await authStore.ensureSklandCred();
+    console.log('获取到森空岛凭证:', { cred: cred.substring(0, 20) + '...', token: token.substring(0, 20) + '...' });
 
-    // 模拟数据加载
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    // 获取默认角色UID
+    const defaultUid = authStore.bindingRoles.find(role => role.isDefault)?.uid || authStore.bindingRoles[0].uid;
+    console.log('使用UID:', defaultUid);
 
-    // 尝试从本地存储加载数据
-    const savedData = localStorage.getItem('gachaData');
-    if (savedData) {
-      gachaData.value = JSON.parse(savedData);
-      const savedTime = localStorage.getItem('gachaLastUpdate');
-      lastUpdateTime.value = savedTime ? parseInt(savedTime) : Date.now();
+    // 获取卡池分类
+    console.log('获取卡池分类...');
+    console.log('请求参数:', { cred: cred.substring(0, 20) + '...', token: token.substring(0, 20) + '...', uid: defaultUid });
+    
+    const categories = await GachaAPI.getGachaCategories(cred, token, defaultUid);
+    console.log('获取到卡池分类:', categories);
+    console.log('卡池分类数量:', categories?.length || 0);
+
+    if (!categories || categories.length === 0) {
+      showInfo('暂无抽卡记录');
+      return;
     }
 
-    showSuccess('寻访记录加载完成！');
+    // 获取每个卡池的抽卡记录
+    const allPools: GachaPool[] = [];
+    
+    for (const category of categories) {
+      console.log(`获取卡池 ${category.name} 的记录...`);
+      
+      try {
+        console.log(`开始获取卡池 ${category.name} (ID: ${category.id}) 的记录...`);
+        
+        // 获取该卡池的所有记录
+        const poolRecords: GachaRecord[] = [];
+        let hasMore = true;
+        let nextPos = 1;
+        let nextGachaTs = 0;
+        let pageCount = 0;
+
+        // 分页获取所有记录
+        while (hasMore && pageCount < 10) { // 限制最大页数防止无限循环
+          pageCount++;
+          console.log(`获取第 ${pageCount} 页记录...`);
+          
+          const response: GachaRecordsResponse = nextGachaTs > 0 
+            ? await GachaAPI.getMoreGachaRecords(cred, token, defaultUid, category.id, nextGachaTs, nextPos, 50)
+            : await GachaAPI.getGachaRecords(cred, token, defaultUid, category.id, 50);
+
+          console.log(`卡池 ${category.name} 第 ${pageCount} 页获取到 ${response.list.length} 条记录`);
+          console.log(`分页信息: hasMore=${response.hasMore}, nextPos=${response.nextPos}, nextGachaTs=${response.nextGachaTs}`);
+          
+          if (response.list && response.list.length > 0) {
+            poolRecords.push(...response.list);
+          }
+          
+          hasMore = response.hasMore;
+          nextPos = response.nextPos;
+          nextGachaTs = response.nextGachaTs;
+
+          // 避免请求过于频繁
+          if (hasMore) {
+            console.log('等待200ms后继续获取下一页...');
+            await new Promise(resolve => setTimeout(resolve, 200));
+          }
+        }
+        
+        console.log(`卡池 ${category.name} 总共获取到 ${poolRecords.length} 条记录`);
+
+        if (poolRecords.length > 0) {
+          // 转换数据格式
+          const processedPool = processGachaPool(category, poolRecords);
+          allPools.push(processedPool);
+          console.log(`卡池 ${category.name} 处理完成，总抽数: ${processedPool.count}`);
+        }
+      } catch (error) {
+        console.error(`获取卡池 ${category.name} 记录失败:`, error);
+        // 继续处理其他卡池
+      }
+    }
+
+    // 按时间排序
+    allPools.sort((a, b) => b.ts - a.ts);
+
+    gachaData.value = allPools;
+    lastUpdateTime.value = Date.now();
+
+    // 保存到本地存储
+    localStorage.setItem('gachaData', JSON.stringify(allPools));
+    localStorage.setItem('gachaLastUpdate', lastUpdateTime.value.toString());
+
+    console.log('抽卡数据获取完成:', {
+      poolCount: allPools.length,
+      totalPulls: allPools.reduce((sum, pool) => sum + pool.count, 0)
+    });
+
+    showSuccess(`寻访记录加载完成！共 ${allPools.length} 个卡池`);
   } catch (error) {
     console.error('获取寻访记录失败:', error);
     showError('获取寻访记录失败，请稍后重试');
+    
+    // 尝试从本地存储加载数据
+    const savedData = localStorage.getItem('gachaData');
+    if (savedData) {
+      try {
+        gachaData.value = JSON.parse(savedData);
+        const savedTime = localStorage.getItem('gachaLastUpdate');
+        lastUpdateTime.value = savedTime ? parseInt(savedTime) : Date.now();
+        showInfo('网络获取失败，显示缓存数据');
+      } catch (parseError) {
+        console.error('解析缓存数据失败:', parseError);
+      }
+    }
   } finally {
     isLoading.value = false;
   }
+};
+
+// ==================== 数据处理方法 ====================
+
+/**
+ * 处理单个卡池的数据
+ */
+const processGachaPool = (category: GachaCategory, records: GachaRecord[]): GachaPool => {
+  const allRecords: Record[] = [];
+  let recordId = 1;
+
+  // 将所有抽卡记录展开为单条记录
+  records.forEach(gachaRecord => {
+    gachaRecord.chars.forEach(char => {
+      allRecords.push({
+        id: recordId++,
+        name: char.name,
+        charId: char.name, // 使用名字作为ID，实际应该使用charId
+        isNew: char.isNew,
+        rarity: char.rarity,
+        ts: gachaRecord.ts
+      });
+    });
+  });
+
+  // 判断是否为限定卡池（根据名称判断）
+  const isFes = category.name.includes('限定') || category.name.includes('联合') || category.name.includes('异格');
+
+  return {
+    pool: category.name,
+    category: category.id,
+    count: allRecords.length,
+    ts: category.startTime,
+    isFes,
+    data: allRecords
+  };
 };
 
 // ==================== 工具方法 ====================
@@ -317,33 +451,21 @@ const formatRecordTime = (timestamp: number): string => {
  * 获取稀有度对应的CSS类
  */
 const getRarityClass = (record: Record): string => {
-  // 根据charId或其他逻辑判断稀有度
-  // 这里简单模拟，实际应该根据游戏数据判断
-  const rarity = record.count <= 10 ? 6 : record.count <= 30 ? 5 : 4;
-  return `rarity-${rarity}`;
+  return `rarity-${record.rarity}`;
 };
 
 /**
  * 获取稀有度星号显示
  */
 const getRarityStars = (record: Record): string => {
-  // 根据charId或其他逻辑判断稀有度
-  // 这里简单模拟
-  const rarity = record.count <= 10 ? 6 : record.count <= 30 ? 5 : 4;
-  return '★'.repeat(rarity);
+  return '★'.repeat(record.rarity);
 };
 
 /**
  * 获取指定稀有度的数量
  */
 const getRarityCount = (records: Record[], rarity: number): number => {
-  // 实际实现需要根据游戏数据判断稀有度
-  // 这里使用count作为模拟
-  return records.filter(record => {
-    if (rarity === 6) return record.count <= 10;
-    if (rarity === 5) return record.count > 10 && record.count <= 30;
-    return record.count > 30;
-  }).length;
+  return records.filter(record => record.rarity === rarity).length;
 };
 
 /**
@@ -365,6 +487,10 @@ onMounted(() => {
       gachaData.value = JSON.parse(savedData);
       const savedTime = localStorage.getItem('gachaLastUpdate');
       lastUpdateTime.value = savedTime ? parseInt(savedTime) : Date.now();
+      console.log('从本地存储加载抽卡数据:', {
+        poolCount: gachaData.value.length,
+        totalPulls: gachaData.value.reduce((sum: number, pool: GachaPool) => sum + pool.count, 0)
+      });
     } catch (error) {
       console.error('加载本地数据失败:', error);
     }
@@ -373,6 +499,8 @@ onMounted(() => {
   // 如果已登录，尝试获取最新数据
   if (authStore.isLogin) {
     fetchGachaData();
+  } else {
+    console.log('用户未登录，跳过抽卡数据获取');
   }
 });
 </script>
