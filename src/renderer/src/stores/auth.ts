@@ -22,6 +22,8 @@ interface AuthState {
   credRetryCount: number;
   authError: string | null;
   isInitializing: boolean;
+  isRestoring: boolean;
+  restorePromise: Promise<boolean> | null;
 }
 
 /**
@@ -79,7 +81,9 @@ export const useAuthStore = defineStore('auth', {
     isCredReady: false,
     credRetryCount: 0,
     authError: null,
-    isInitializing: false
+    isInitializing: false,
+    isRestoring: false,
+    restorePromise: null
   }),
 
   getters: {
@@ -270,6 +274,12 @@ export const useAuthStore = defineStore('auth', {
      * 优化恢复登录状态 - 修改：现在总是执行完整数据获取流程
      */
     async restoreAuthState(): Promise<boolean> {
+      // 防止并发调用
+      if (this.isRestoring && this.restorePromise) {
+        logger.debug('恢复登录状态已在进行中，等待结果');
+        return this.restorePromise;
+      }
+
       if (!this.canAttemptRestore) {
         logger.warn('已达到最大恢复尝试次数，不再尝试恢复');
         return false;
@@ -277,17 +287,36 @@ export const useAuthStore = defineStore('auth', {
 
       this.restoreAttempts++;
       this.isInitializing = true;
+      this.isRestoring = true;
       logger.info(`尝试恢复登录状态 (第 ${this.restoreAttempts} 次)`);
 
+      this.restorePromise = this._doRestoreAuthState();
+
+      try {
+        const result = await this.restorePromise;
+        return result;
+      } finally {
+        this.isRestoring = false;
+        this.restorePromise = null;
+      }
+    },
+
+    /**
+     * 实际执行恢复登录状态的内部方法
+     */
+    async _doRestoreAuthState(): Promise<boolean> {
       let authState: StoredAuthState | null = null;
+      let timerStarted = false;
 
       try {
         console.time('恢复登录状态耗时');
+        timerStarted = true;
 
         const authStr = localStorage.getItem('authState');
         if (!authStr) {
           logger.info('本地存储中没有登录状态');
           this.isInitializing = false;
+          if (timerStarted) console.timeEnd('恢复登录状态耗时');
           return false;
         }
 
@@ -297,6 +326,7 @@ export const useAuthStore = defineStore('auth', {
           logger.error('解析本地存储数据失败', parseError);
           this.clearCorruptedStorage();
           this.isInitializing = false;
+          if (timerStarted) console.timeEnd('恢复登录状态耗时');
           return false;
         }
 
@@ -305,6 +335,7 @@ export const useAuthStore = defineStore('auth', {
           logger.warn('本地存储中没有有效的hgToken');
           this.clearCorruptedStorage();
           this.isInitializing = false;
+          if (timerStarted) console.timeEnd('恢复登录状态耗时');
           return false;
         }
 
@@ -312,6 +343,7 @@ export const useAuthStore = defineStore('auth', {
           logger.warn('登录状态已过期');
           this.clearExpiredStorage();
           this.isInitializing = false;
+          if (timerStarted) console.timeEnd('恢复登录状态耗时');
           return false;
         }
 
@@ -334,7 +366,7 @@ export const useAuthStore = defineStore('auth', {
 
         // 修改点6: 总是执行完整数据获取流程，强制重新获取所有数据
         logger.info('开始执行完整数据获取流程...');
-        await this.executeFullDataRefresh();
+        await this.executeFullDataRefresh(false); // 传递false避免启动重复计时器
 
         console.timeEnd('恢复登录状态耗时');
         this.isInitializing = false;
@@ -343,6 +375,7 @@ export const useAuthStore = defineStore('auth', {
       } catch (error) {
         logger.error('恢复登录状态失败', error);
         this.isInitializing = false;
+        if (timerStarted) console.timeEnd('恢复登录状态耗时');
         return false;
       }
     },
@@ -352,9 +385,16 @@ export const useAuthStore = defineStore('auth', {
      * 按照登录后的标准流程获取所有必要数据
      */
     async executeFullDataRefresh(): Promise<void> {
-      try {
-        console.time('完整数据刷新耗时');
+      // 添加可选参数来控制是否启动计时器，避免与调用方计时器冲突
+      const startTimer = arguments.length === 0; // 只有在没有参数时才启动计时器
+      let timerStarted = false;
 
+      if (startTimer) {
+        console.time('完整数据刷新耗时');
+        timerStarted = true;
+      }
+
+      try {
         // 第一步：获取森空岛凭证
         logger.info('步骤1: 获取森空岛临时凭证...');
         await this.ensureSklandCred();
@@ -362,20 +402,19 @@ export const useAuthStore = defineStore('auth', {
 
         // 第二步：获取绑定角色列表
         logger.info('步骤2: 获取绑定角色列表...');
-        await this.fetchBindingRoles(); // 修改点7: 移除未使用的forceRefresh参数
+        await this.fetchBindingRoles();
         logger.info(`✓ 角色列表获取成功，共 ${this.bindingRoles.length} 个角色`);
 
         // 第三步：获取玩家数据（如果有角色）
         if (this.bindingRoles.length > 0) {
           logger.info('步骤3: 获取玩家详细数据...');
-          await this.fetchPlayerData(); // 修改点8: 移除未使用的forceRefresh参数
+          await this.fetchPlayerData();
           logger.info('✓ 玩家数据获取成功');
         }
 
         // 第四步：保存更新后的状态
         await this.saveToLocalStorage();
 
-        console.timeEnd('完整数据刷新耗时');
         logger.info('完整数据刷新流程完成', {
           isCredReady: this.isCredReady,
           hasPlayerData: !!this.playerData,
@@ -401,6 +440,11 @@ export const useAuthStore = defineStore('auth', {
 
         this.authError = '数据获取失败，请重试';
         throw normalizedError;
+      } finally {
+        // 确保无论成功还是失败，计时器都会被清理
+        if (timerStarted) {
+          console.timeEnd('完整数据刷新耗时');
+        }
       }
     },
 
@@ -513,9 +557,11 @@ export const useAuthStore = defineStore('auth', {
      * 优化后的通用登录流程
      */
     async handleLogin(hgToken: string): Promise<void> {
+      let timerStarted = false;
       try {
         logger.info('开始登录流程', { hasToken: !!hgToken });
         console.time('登录流程总耗时');
+        timerStarted = true;
 
         this.hgToken = hgToken;
         this.isLogin = true;
@@ -525,9 +571,10 @@ export const useAuthStore = defineStore('auth', {
         this.isInitializing = true;
 
         // 使用完整数据获取流程
-        await this.executeFullDataRefresh();
+        await this.executeFullDataRefresh(false); // 传递false避免启动重复计时器
 
         console.timeEnd('登录流程总耗时');
+        timerStarted = false;
         this.isInitializing = false;
 
         logger.info('登录流程完成', {
@@ -542,6 +589,7 @@ export const useAuthStore = defineStore('auth', {
         logger.error('登录流程失败', normalizedError);
         this.authError = '登录失败，请检查凭证';
         this.isInitializing = false;
+        if (timerStarted) console.timeEnd('登录流程总耗时');
         return Promise.reject(normalizedError);
       }
     },
@@ -669,6 +717,8 @@ export const useAuthStore = defineStore('auth', {
       this.credRetryCount = 0;
       this.authError = '请重新登录';
       this.isInitializing = false;
+      this.isRestoring = false;
+      this.restorePromise = null;
 
       if ((this as any).saveTimeout) {
         clearTimeout((this as any).saveTimeout);
