@@ -15,7 +15,8 @@ const formData = reactive({
   phone: '',
   password: '',
   code: '',
-  loginType: 'password' as 'password' | 'sms'
+  loginType: 'password' as 'password' | 'sms',
+  saveInfo: false
 });
 
 // 表单验证状态
@@ -148,12 +149,16 @@ const handleSubmit = async () => {
     }
 
     // 登录成功后的处理
-    emit('loginSuccess');
+    // 如果选择保存，保存到localStorage
+    if (formData.saveInfo) {
+      localStorage.setItem('hg_phone', formData.phone);
+      localStorage.setItem('hg_password', formData.password);
+    }
 
-    // 延迟关闭窗口，确保成功反馈可见
-    setTimeout(() => {
-      emit('close');
-    }, 300);
+    // 优化：立即关闭登录窗口，不等待数据加载
+    // 让用户立即看到主界面，数据在后台加载
+    emit('close');
+    emit('loginSuccess');
 
   } catch (error: any) {
     errorMsg.value = error.message || '登录失败，请重试';
@@ -165,13 +170,34 @@ const handleSubmit = async () => {
       }
     }, 5000);
   } finally {
+    // 优化：立即清除loading状态，避免界面卡顿
     loading.value = false;
-    // 使用 setTimeout 避免阻塞UI
-    setTimeout(() => {
-      isSubmitting = false;
-    }, 500);
+    isSubmitting = false;
   }
 };
+
+// 注释：暂时隐藏清除保存的登录信息功能
+// const clearSavedInfo = () => {
+//   if (confirm('确定要清除保存的登录信息吗？')) {
+//     localStorage.removeItem('hg_phone');
+//     localStorage.removeItem('hg_password');
+//     
+//     // 清空表单
+//     formData.phone = '';
+//     formData.password = '';
+//     formData.saveInfo = false;
+//     
+//     // 重新验证
+//     handlePhoneInput();
+//     handlePasswordInput();
+//     
+//     // 聚焦到手机号输入框
+//     const phoneInput = document.getElementById('phone') as HTMLInputElement;
+//     if (phoneInput) {
+//       phoneInput.focus();
+//     }
+//   }
+// };
 
 // 优化关闭窗口函数
 const handleClose = () => {
@@ -211,6 +237,19 @@ onMounted(() => {
   if (phoneInput) {
     setTimeout(() => phoneInput.focus(), 100);
   }
+
+  // 预填充保存的登录信息
+  const savedPhone = localStorage.getItem('hg_phone');
+  const savedPassword = localStorage.getItem('hg_password');
+  if (savedPhone && savedPassword) {
+    formData.phone = savedPhone;
+    formData.password = savedPassword;
+    formData.saveInfo = true;
+    
+    // 触发验证
+    handlePhoneInput();
+    handlePasswordInput();
+  }
 });
 
 onUnmounted(() => {
@@ -230,6 +269,13 @@ onUnmounted(() => {
       <!-- 窗口标题栏 -->
       <div class="window-header">
         <h3>鹰角通行证登录</h3>
+        <!-- 注释：暂时隐藏清除按钮功能 -->
+        <!-- <div class="header-buttons">
+          <button class="clear-btn" @click="clearSavedInfo" :disabled="loading" title="清除保存的登录信息">
+            清除
+          </button>
+          <button class="close-btn" @click="handleClose" :disabled="loading">×</button>
+        </div> -->
         <button class="close-btn" @click="handleClose" :disabled="loading">×</button>
       </div>
 
@@ -283,6 +329,18 @@ onUnmounted(() => {
               minlength="6"
               required
             />
+          </div>
+
+          <!-- 记住登录信息 -->
+          <div class="form-group" v-if="formData.loginType === 'password'">
+            <label class="checkbox-label">
+              <input
+                type="checkbox"
+                v-model="formData.saveInfo"
+                :disabled="loading"
+              />
+              记住登录信息
+            </label>
           </div>
 
           <!-- 验证码登录表单 -->
@@ -526,6 +584,34 @@ onUnmounted(() => {
   font-weight: 600;
 }
 
+/* 注释：暂时隐藏清除按钮相关样式 */
+/* .header-buttons {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.clear-btn {
+  background: #ff6b6b;
+  border: none;
+  color: white;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  transition: all 0.3s ease;
+}
+
+.clear-btn:hover:not(:disabled) {
+  background: #ff5252;
+}
+
+.clear-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+} */
+
 .close-btn {
   background: none;
   border: none;
@@ -576,6 +662,22 @@ onUnmounted(() => {
 
 .form-group input::placeholder {
   color: #666;
+}
+
+.checkbox-label {
+  display: flex !important;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-weight: normal !important;
+  color: #ccc !important;
+  margin-bottom: 0 !important;
+}
+
+.checkbox-label input[type="checkbox"] {
+  width: auto !important;
+  margin: 0;
+  cursor: pointer;
 }
 
 .form-actions {

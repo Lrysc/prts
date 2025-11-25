@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia';
 import { AuthAPI } from '@services/api';
 import { logger } from '@services/logger';
+import { showSuccess } from '@services/toastService';
 
 /**
  * 认证状态接口定义
@@ -305,17 +306,16 @@ export const useAuthStore = defineStore('auth', {
      */
     async _doRestoreAuthState(): Promise<boolean> {
       let authState: StoredAuthState | null = null;
-      let timerStarted = false;
+      const timerLabel = '恢复登录状态耗时';
 
       try {
-        console.time('恢复登录状态耗时');
-        timerStarted = true;
+        console.time(timerLabel);
 
         const authStr = localStorage.getItem('authState');
         if (!authStr) {
           logger.info('本地存储中没有登录状态');
           this.isInitializing = false;
-          if (timerStarted) console.timeEnd('恢复登录状态耗时');
+          console.timeEnd(timerLabel);
           return false;
         }
 
@@ -325,7 +325,7 @@ export const useAuthStore = defineStore('auth', {
           logger.error('解析本地存储数据失败', parseError);
           this.clearCorruptedStorage();
           this.isInitializing = false;
-          if (timerStarted) console.timeEnd('恢复登录状态耗时');
+          console.timeEnd(timerLabel);
           return false;
         }
 
@@ -334,7 +334,7 @@ export const useAuthStore = defineStore('auth', {
           logger.warn('本地存储中没有有效的hgToken');
           this.clearCorruptedStorage();
           this.isInitializing = false;
-          if (timerStarted) console.timeEnd('恢复登录状态耗时');
+          console.timeEnd(timerLabel);
           return false;
         }
 
@@ -342,7 +342,7 @@ export const useAuthStore = defineStore('auth', {
           logger.warn('登录状态已过期');
           this.clearExpiredStorage();
           this.isInitializing = false;
-          if (timerStarted) console.timeEnd('恢复登录状态耗时');
+          console.timeEnd(timerLabel);
           return false;
         }
 
@@ -363,18 +363,21 @@ export const useAuthStore = defineStore('auth', {
           hasHgToken: !!this.hgToken
         });
 
-        // 修改点6: 总是执行完整数据获取流程，强制重新获取所有数据
+        // 修改点6: 异步执行完整数据获取流程，不阻塞登录状态恢复
         logger.info('开始执行完整数据获取流程...');
-        await this.executeFullDataRefresh(false); // 传递false避免启动重复计时器
+        // 不等待数据刷新完成，让登录状态立即生效
+        this.executeFullDataRefresh(false).catch(error => {
+          logger.error('后台数据刷新失败', error);
+        });
 
-        console.timeEnd('恢复登录状态耗时');
+        console.timeEnd(timerLabel);
         this.isInitializing = false;
         return true;
 
       } catch (error) {
         logger.error('恢复登录状态失败', error);
         this.isInitializing = false;
-        if (timerStarted) console.timeEnd('恢复登录状态耗时');
+        console.timeEnd(timerLabel);
         return false;
       }
     },
@@ -418,6 +421,14 @@ export const useAuthStore = defineStore('auth', {
           hasPlayerData: !!this.playerData,
           roleCount: this.bindingRoles.length
         });
+
+        // 数据加载完成，显示神经网络连接成功通知
+        // 根据是否有玩家数据显示不同的欢迎信息
+        if (this.playerData) {
+          showSuccess('欢迎回来，博士！');
+        } else {
+          showSuccess('神经网络连接成功！');
+        }
 
       } catch (error) {
         const normalizedError = this.normalizeError(error);
@@ -555,39 +566,31 @@ export const useAuthStore = defineStore('auth', {
      * 优化后的通用登录流程
      */
     async handleLogin(hgToken: string): Promise<void> {
-      let timerStarted = false;
       try {
         logger.info('开始登录流程', { hasToken: !!hgToken });
-        console.time('登录流程总耗时');
-        timerStarted = true;
 
+        // 立即设置基本登录状态
         this.hgToken = hgToken;
         this.isLogin = true;
         this.restoreAttempts = 0;
         this.isCredReady = false;
         this.authError = null;
-        this.isInitializing = true;
+        this.isInitializing = false; // 不设置为初始化状态，避免阻塞UI
 
-        // 使用完整数据获取流程
-        await this.executeFullDataRefresh(false); // 传递false避免启动重复计时器
-
-        console.timeEnd('登录流程总耗时');
-        timerStarted = false;
-        this.isInitializing = false;
-
-        logger.info('登录流程完成', {
-          userId: this.userId,
-          roleCount: this.bindingRoles.length,
-          hasPlayerData: !!this.playerData,
-          isCredReady: this.isCredReady
+        // 异步执行数据获取，不阻塞登录流程
+        // 数据加载完成后会显示"神经网络连接成功"通知
+        this.executeFullDataRefresh(false).catch(error => {
+          logger.error('登录后数据刷新失败', error);
+          this.authError = '数据获取失败，请刷新重试';
         });
+
+        logger.info('登录状态设置完成，数据在后台加载中');
 
       } catch (error) {
         const normalizedError = this.normalizeError(error);
         logger.error('登录流程失败', normalizedError);
         this.authError = '登录失败，请检查凭证';
         this.isInitializing = false;
-        if (timerStarted) console.timeEnd('登录流程总耗时');
         return Promise.reject(normalizedError);
       }
     },
