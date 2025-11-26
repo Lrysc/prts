@@ -14,10 +14,14 @@ export interface ApiResponse<T = any> {
 }
 
 /**
- * 鹰角网络登录响应数据类型
+ * 鹰角网络账号信息响应类型
  */
-export interface HypergryphTokenResponse {
-  token: string;
+export interface HypergryphAccountResponse {
+  code: number;
+  data: {
+    content: string; // 这就是抽卡用的 token
+  };
+  msg: string;
 }
 
 /**
@@ -55,6 +59,7 @@ export interface BindingCharacter {
   channelName: string;
   nickName: string;
   isDelete: boolean;
+  roleToken?: string; // 添加role token字段，用于官网抽卡API
 }
 
 /**
@@ -196,38 +201,7 @@ export interface ApInfo {
   recoverTime: number;
 }
 
-/**
- * 卡池分类信息类型
- */
-export interface GachaCategory {
-  id: string;
-  name: string;
-  startTime: number;
-  endTime: number;
-}
 
-/**
- * 抽卡记录项类型
- */
-export interface GachaRecord {
-  ts: number;
-  pool: string;
-  chars: {
-    name: string;
-    rarity: number;
-    isNew: boolean;
-  }[];
-}
-
-/**
- * 抽卡记录响应类型
- */
-export interface GachaRecordsResponse {
-  list: GachaRecord[];
-  hasMore: boolean;
-  nextPos: number;
-  nextGachaTs: number;
-}
 
 /**
  * 签到响应类型
@@ -255,7 +229,8 @@ export interface AttendanceResponse {
 const isDev = import.meta.env.DEV;
 const API_BASE = {
   hgAuth: isDev ? '/api/hg' : 'https://as.hypergryph.com',
-  skland: isDev ? '/api/skland' : 'https://zonai.skland.com'
+  skland: isDev ? '/api/skland' : 'https://zonai.skland.com',
+  webApi: isDev ? '/api/web' : 'https://web-api.skland.com'
 };
 
 /**
@@ -273,6 +248,8 @@ const getCommonHeaders = () => {
   };
 };
 
+
+
 /**
  * 处理 API 响应，包含错误处理
  * @param response - fetch 响应对象
@@ -284,6 +261,13 @@ const handleApiResponse = async (response: Response, apiName: string): Promise<a
   if (!response.ok) {
     console.error(`${apiName} HTTP 错误: ${response.status} ${response.statusText}`);
     throw new Error(`${apiName} 请求失败: HTTP ${response.status}`);
+  }
+
+  const contentType = response.headers.get('content-type');
+  if (!contentType || !contentType.includes('application/json')) {
+    const text = await response.text();
+    console.error(`${apiName} 响应不是 JSON:`, text.substring(0, 200));
+    throw new Error(`${apiName} 响应格式错误，请检查代理配置`);
   }
 
   const data = await response.json();
@@ -307,6 +291,8 @@ const handleApiResponse = async (response: Response, apiName: string): Promise<a
  * 认证相关 API 接口
  */
 export const AuthAPI = {
+
+
   /**
    * 通过手机号和密码登录获取鹰角 token
    * @param phone - 手机号码
@@ -458,16 +444,22 @@ export const AuthAPI = {
 
     const data = await handleApiResponse(response, '获取绑定角色');
 
+    console.log('绑定角色API完整响应:', JSON.stringify(data, null, 2));
+    
     // 查找明日方舟游戏的角色绑定列表
     const arknightsBinding = data.data.list.find((item: BindingList) => item.appCode === 'arknights');
-    return arknightsBinding?.bindingList || [];
+    const bindingList = arknightsBinding?.bindingList || [];
+    
+    console.log('明日方舟绑定列表:', JSON.stringify(bindingList, null, 2));
+    
+    return bindingList;
   },
 
   /**
    * 获取玩家数据
    * @param cred - 森空岛认证凭证
    * @param signToken - 签名 token
-   * @param uid - 玩家 UID
+   * @param uid - 玩家 UID (游戏内UID)
    * @returns 玩家数据
    * @throws 当获取玩家数据失败时抛出错误
    */
@@ -515,7 +507,7 @@ export const AuthAPI = {
    * 执行签到操作
    * @param cred - 森空岛认证凭证
    * @param signToken - 签名 token
-   * @param uid - 玩家 UID
+   * @param uid - 玩家 UID (游戏内UID)
    * @param gameId - 游戏 ID
    * @returns 签到结果
    * @throws 当签到失败时抛出错误
@@ -579,179 +571,9 @@ export const AuthAPI = {
   }
 };
 
-// ============================================================================
-// 抽卡记录相关 API
-// ============================================================================
 
-/**
- * 抽卡记录相关 API 接口
- */
-export const GachaAPI = {
-  /**
-   * 获取卡池分类列表
-   * @param cred - 森空岛认证凭证
-   * @param signToken - 签名 token
-   * @param uid - 玩家 UID
-   * @returns 卡池分类列表
-   * @throws 当获取卡池分类失败时抛出错误
-   */
-  getGachaCategories: async (
-    cred: string,
-    signToken: string,
-    uid: string
-  ): Promise<GachaCategory[]> => {
-    // 尝试多个可能的API路径
-    const possibleUrls = [
-      isDev ? `/api/user/api/inquiry/gacha/cate?uid=${uid}` : `${API_BASE.skland}/user/api/inquiry/gacha/cate?uid=${uid}`,
-      `${API_BASE.skland}/api/v1/gacha/cate?uid=${uid}`,
-      `${API_BASE.skland}/api/v2/gacha/cate?uid=${uid}`,
-      `${API_BASE.skland}/gacha/api/v1/cate?uid=${uid}`,
-      `${API_BASE.skland}/user/api/v1/gacha/cate?uid=${uid}`,
-      `${API_BASE.skland}/api/v1/user/gacha/cate?uid=${uid}`
-    ];
 
-    let lastError: Error | null = null;
 
-    for (const url of possibleUrls) {
-      try {
-        console.log(`尝试获取卡池分类，URL: ${url}`);
-        const headers = getSignedHeaders(url, 'GET', null, cred, signToken);
-        console.log('获取卡池分类请求头:', headers);
-
-        const response = await fetch(url, {
-          method: 'GET',
-          headers
-        });
-
-        const data = await handleApiResponse(response, '获取卡池分类');
-        console.log(`成功获取卡池分类，使用URL: ${url}`);
-        return data.data || data;
-      } catch (error) {
-        console.log(`URL ${url} 失败:`, error);
-        lastError = error as Error;
-        continue;
-      }
-    }
-
-    // 所有URL都失败了
-    console.error('所有可能的抽卡API路径都失败了');
-    throw lastError || new Error('获取卡池分类失败');
-  },
-
-  /**
-   * 获取抽卡记录
-   * @param cred - 森空岛认证凭证
-   * @param signToken - 签名 token
-   * @param uid - 玩家 UID
-   * @param category - 卡池分类
-   * @param size - 获取记录数量，默认 20
-   * @returns 抽卡记录响应
-   * @throws 当获取抽卡记录失败时抛出错误
-   */
-  getGachaRecords: async (
-    cred: string,
-    signToken: string,
-    uid: string,
-    category: string,
-    size: number = 20
-  ): Promise<GachaRecordsResponse> => {
-    // 尝试多个可能的API路径
-    const possibleUrls = [
-      isDev ? `/api/user/api/inquiry/gacha/history?uid=${uid}&category=${category}&size=${size}` : `${API_BASE.skland}/user/api/inquiry/gacha/history?uid=${uid}&category=${category}&size=${size}`,
-      `${API_BASE.skland}/api/v1/gacha/history?uid=${uid}&category=${category}&size=${size}`,
-      `${API_BASE.skland}/api/v2/gacha/history?uid=${uid}&category=${category}&size=${size}`,
-      `${API_BASE.skland}/gacha/api/v1/history?uid=${uid}&category=${category}&size=${size}`,
-      `${API_BASE.skland}/user/api/v1/gacha/history?uid=${uid}&category=${category}&size=${size}`,
-      `${API_BASE.skland}/api/v1/user/gacha/history?uid=${uid}&category=${category}&size=${size}`
-    ];
-
-    let lastError: Error | null = null;
-
-    for (const url of possibleUrls) {
-      try {
-        console.log(`尝试获取抽卡记录，URL: ${url}`);
-        const headers = getSignedHeaders(url, 'GET', null, cred, signToken);
-        console.log('获取抽卡记录请求头:', headers);
-
-        const response = await fetch(url, {
-          method: 'GET',
-          headers
-        });
-
-        const data = await handleApiResponse(response, '获取抽卡记录');
-        console.log(`成功获取抽卡记录，使用URL: ${url}`);
-        return data.data || data;
-      } catch (error) {
-        console.log(`URL ${url} 失败:`, error);
-        lastError = error as Error;
-        continue;
-      }
-    }
-
-    // 所有URL都失败了
-    console.error('所有可能的抽卡记录API路径都失败了');
-    throw lastError || new Error('获取抽卡记录失败');
-  },
-
-  /**
-   * 获取更多抽卡记录（分页）
-   * @param cred - 森空岛认证凭证
-   * @param signToken - 签名 token
-   * @param uid - 玩家 UID
-   * @param category - 卡池分类
-   * @param gachaTs - 时间戳，用于分页
-   * @param pos - 位置，默认 1
-   * @param size - 获取记录数量，默认 20
-   * @returns 抽卡记录响应
-   * @throws 当获取更多抽卡记录失败时抛出错误
-   */
-  getMoreGachaRecords: async (
-    cred: string,
-    signToken: string,
-    uid: string,
-    category: string,
-    gachaTs: number,
-    pos: number = 1,
-    size: number = 20
-  ): Promise<GachaRecordsResponse> => {
-    // 尝试多个可能的API路径
-    const possibleUrls = [
-      isDev ? `/api/user/api/inquiry/gacha/history?uid=${uid}&category=${category}&pos=${pos}&gachaTs=${gachaTs}&size=${size}` : `${API_BASE.skland}/user/api/inquiry/gacha/history?uid=${uid}&category=${category}&pos=${pos}&gachaTs=${gachaTs}&size=${size}`,
-      `${API_BASE.skland}/api/v1/gacha/history?uid=${uid}&category=${category}&pos=${pos}&gachaTs=${gachaTs}&size=${size}`,
-      `${API_BASE.skland}/api/v2/gacha/history?uid=${uid}&category=${category}&pos=${pos}&gachaTs=${gachaTs}&size=${size}`,
-      `${API_BASE.skland}/gacha/api/v1/history?uid=${uid}&category=${category}&pos=${pos}&gachaTs=${gachaTs}&size=${size}`,
-      `${API_BASE.skland}/user/api/v1/gacha/history?uid=${uid}&category=${category}&pos=${pos}&gachaTs=${gachaTs}&size=${size}`,
-      `${API_BASE.skland}/api/v1/user/gacha/history?uid=${uid}&category=${category}&pos=${pos}&gachaTs=${gachaTs}&size=${size}`
-    ];
-
-    let lastError: Error | null = null;
-
-    for (const url of possibleUrls) {
-      try {
-        console.log(`尝试获取更多抽卡记录，URL: ${url}`);
-        const headers = getSignedHeaders(url, 'GET', null, cred, signToken);
-        console.log('获取更多抽卡记录请求头:', headers);
-
-        const response = await fetch(url, {
-          method: 'GET',
-          headers
-        });
-
-        const data = await handleApiResponse(response, '获取更多抽卡记录');
-        console.log(`成功获取更多抽卡记录，使用URL: ${url}`);
-        return data.data || data;
-      } catch (error) {
-        console.log(`URL ${url} 失败:`, error);
-        lastError = error as Error;
-        continue;
-      }
-    }
-
-    // 所有URL都失败了
-    console.error('所有可能的更多抽卡记录API路径都失败了');
-    throw lastError || new Error('获取更多抽卡记录失败');
-  }
-};
 
 // ============================================================================
 // 工具函数
@@ -801,9 +623,10 @@ export const getRoutineProgress = (routine: RoutineData) => {
   };
 };
 
+
+
 export default {
   AuthAPI,
-  GachaAPI,
   calculateApInfo,
   getRoutineProgress
 };

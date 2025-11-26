@@ -1,8 +1,32 @@
-import { contextBridge } from 'electron'
+import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 
 // Custom APIs for renderer
-const api = {}
+const api = {
+  // 代理HTTP请求，用于绕过浏览器安全限制
+  proxyRequest: async (url: string, options?: any) => {
+    return ipcRenderer.invoke('proxy-request', { url, options })
+  },
+  
+  // 打开调试窗口
+  openDebugWindow: async (url?: string) => {
+    return ipcRenderer.invoke('open-debug-window', url)
+  },
+  
+  // 在调试窗口中执行API请求
+  debugApiRequest: async (url: string, options?: any) => {
+    return ipcRenderer.invoke('debug-api-request', { url, options })
+  },
+  
+  // 窗口控制
+  windowControl: {
+    minimize: () => ipcRenderer.invoke('window-minimize'),
+    maximize: () => ipcRenderer.invoke('window-maximize'),
+    unmaximize: () => ipcRenderer.invoke('window-unmaximize'),
+    close: () => ipcRenderer.invoke('window-close'),
+    isMaximized: () => ipcRenderer.invoke('window-is-maximized')
+  }
+}
 
 // Use `contextBridge` APIs to expose Electron APIs to
 // renderer only if context isolation is enabled, otherwise

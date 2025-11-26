@@ -1,82 +1,98 @@
 <template>
   <div class="headhunting-record">
     <div class="header">
-      <h2>寻访记录</h2>
+      <h2>API测试</h2>
       <div class="actions">
-        <button @click="refreshData" :disabled="loading" class="refresh-btn">
-          <span v-if="loading">刷新中...</span>
-          <span v-else>刷新</span>
+        <button @click="testPhonePasswordLogin" class="test-btn" title="测试手机号密码登录">
+          测试登录
+        </button>
+        <button @click="clearSavedCredentials" class="clear-btn" title="清除保存的账号信息">
+          清除账号
+        </button>
+        <button @click="testFullFlow" class="flow-btn" title="测试完整API流程">
+          测试完整流程
+        </button>
+        <button @click="openDebugBrowser" class="debug-btn" title="打开内置调试浏览器">
+          调试浏览器
         </button>
       </div>
     </div>
 
-    <div v-if="loading && !gachaPools.length" class="loading">
+    <div v-if="loading" class="loading">
       <div class="loading-spinner"></div>
-      <p>加载寻访记录中...</p>
+      <p>处理中...</p>
     </div>
 
     <div v-else-if="error" class="error">
       <p>{{ error }}</p>
-      <button @click="refreshData" class="retry-btn">重试</button>
+      <button @click="error = null" class="retry-btn">关闭</button>
     </div>
 
-    <div v-else-if="!gachaPools.length" class="empty">
-      <p>暂无寻访记录</p>
+    <div v-else-if="result" class="result">
+      <h3>API响应结果:</h3>
+      <pre>{{ JSON.stringify(result, null, 2) }}</pre>
     </div>
 
-    <div v-else class="pools-container">
-      <div 
-        v-for="pool in gachaPools" 
-        :key="pool.id" 
-        class="pool-card"
-      >
-        <div class="pool-header">
-          <div class="pool-badge">
-            <span class="badge-text">{{ getPoolBadge(pool.name) }}</span>
-          </div>
-          <h3 class="pool-name">{{ pool.name }}</h3>
-          <div class="pool-stats">
-            <span class="total-pulls">总抽数: {{ pool.totalPulls }}</span>
-            <span class="six-star-count">6星: {{ pool.sixStarCount }}</span>
-          </div>
+    <div v-else class="empty">
+      <p>点击上方按钮测试API功能</p>
+    </div>
+
+    <!-- 登录对话框 -->
+    <div v-if="showLoginDialog" class="login-dialog-overlay" @click="closeLoginDialog">
+      <div class="login-dialog" @click.stop>
+        <h3>明日方舟账号登录</h3>
+        <div class="form-group">
+          <label>手机号:</label>
+          <input
+            v-model="loginForm.phone"
+            type="tel"
+            placeholder="请输入手机号"
+            @keyup.enter="confirmLogin"
+          />
         </div>
+        <div class="form-group">
+          <label>密码:</label>
+          <input
+            v-model="loginForm.password"
+            type="password"
+            placeholder="请输入密码"
+            @keyup.enter="confirmLogin"
+          />
+        </div>
+        <div class="form-group">
+          <label>
+            <input v-model="loginForm.saveInfo" type="checkbox" />
+            保存账号信息
+          </label>
+        </div>
+        <div class="dialog-actions">
+          <button @click="closeLoginDialog" class="cancel-btn">取消</button>
+          <button @click="confirmLogin" :disabled="!loginForm.phone || !loginForm.password" class="confirm-btn">
+            登录
+          </button>
+        </div>
+      </div>
+    </div>
 
-        <div class="pool-content">
-          <div v-if="pool.sixStars.length === 0" class="no-six-star">
-            <p>暂未获得6星干员</p>
-          </div>
-          
-          <div v-else class="six-stars-list">
-            <div 
-              v-for="(star, index) in pool.sixStars" 
-              :key="index"
-              class="six-star-item"
-            >
-              <div class="character-info">
-                <img 
-                  :src="getCharacterAvatar(star.name)"
-                  :alt="star.name"
-                  class="character-avatar"
-                  @error="handleImageError"
-                  @load="handleImageLoad"
-                />
-                <div class="character-details">
-                  <h4 class="character-name">{{ star.name }}</h4>
-                  <p class="pull-info">第 {{ star.pullCount }} 抽获得</p>
-                </div>
-              </div>
-              
-              <div class="progress-container">
-                <div class="progress-bar">
-                  <div 
-                    class="progress-fill"
-                    :style="{ width: getProgressWidth(star.pullCount) }"
-                  ></div>
-                </div>
-                <span class="progress-text">{{ star.pullCount }}抽</span>
-              </div>
-            </div>
-          </div>
+    <!-- UID输入对话框 -->
+    <div v-if="showUidDialog" class="login-dialog-overlay" @click="closeUidDialog">
+      <div class="login-dialog" @click.stop>
+        <h3>输入游戏UID</h3>
+        <div class="form-group">
+          <label>游戏UID (8位数字):</label>
+          <input
+            v-model="uidInput"
+            type="text"
+            placeholder="请输入8位数字UID"
+            maxlength="8"
+            @keyup.enter="confirmUid"
+          />
+        </div>
+        <div class="dialog-actions">
+          <button @click="closeUidDialog" class="cancel-btn">取消</button>
+          <button @click="confirmUid" :disabled="!uidInput || uidInput.length !== 8" class="confirm-btn">
+            确认
+          </button>
         </div>
       </div>
     </div>
@@ -84,237 +100,209 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue';
-import { useAuthStore } from '@stores/auth';
-import { GachaAPI, type GachaCategory, type GachaRecord } from '@services/api';
-import { useGameDataStore } from '@stores/gameData';
-import { logger } from '@services/logger';
-
-interface SixStarRecord {
-  name: string;
-  pullCount: number;
-  timestamp: number;
-}
-
-interface GachaPool {
-  id: string;
-  name: string;
-  totalPulls: number;
-  sixStarCount: number;
-  sixStars: SixStarRecord[];
-  isLimited: boolean;
-}
-
-const authStore = useAuthStore();
-const gameDataStore = useGameDataStore();
+import { ref } from 'vue';
+import { SimpleGachaAPI } from '@services/Gacha';
 
 const loading = ref(false);
 const error = ref<string | null>(null);
-const gachaCategories = ref<GachaCategory[]>([]);
-const gachaRecords = ref<GachaRecord[]>([]);
+const result = ref<any>(null);
 
-// 判断是否为限定卡池
-const isLimitedPool = (poolName: string): boolean => {
-  const limitedKeywords = ['限定', '联合', '跨年', '周年', '庆典', '纪念'];
-  return limitedKeywords.some(keyword => poolName.includes(keyword));
-};
-
-// 获取卡池标记
-const getPoolBadge = (poolName: string): string => {
-  if (isLimitedPool(poolName)) {
-    return '【限定】';
-  }
-  return '【常规】';
-};
-
-// 获取角色头像URL
-const getCharacterAvatar = (characterName: string): string => {
-  const charInfoMap = gameDataStore.playerData?.charInfoMap || {};
-  
-  // 通过角色名称查找charId
-  let charId = '';
-  for (const [id, info] of Object.entries(charInfoMap)) {
-    if (info.name === characterName) {
-      charId = id;
-      break;
-    }
-  }
-  
-  // 如果找到了charId，使用头像获取函数
-  if (charId) {
-    return gameDataStore.getOperatorAvatarUrl(charId);
-  }
-  
-  // 如果没找到，返回空字符串或默认头像
-  return '';
-};
-
-// 处理图片加载错误
-const handleImageError = (event: Event) => {
-  const img = event.target as HTMLImageElement;
-  img.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHJlY3Qgd2lkdGg9IjQwIiBoZWlnaHQ9IjQwIiBmaWxsPSIjRjVGNUY1Ii8+CjxwYXRoIGQ9Ik0yMCAyMEMyMi43NjE0IDIwIDI1IDIyLjIzODYgMjUgMjVDMjUgMjcuNzYxNCAyMi43NjE0IDMwIDIwIDMwQzE3LjIzODYgMzAgMTUgMjcuNzYxNCAxNSAyNUMxNSAyMi4yMzg2IDE3LjIzODYgMjAgMjAgMjBaIiBmaWxsPSIjOUNBM0FGIi8+Cjwvc3ZnPgo=';
-};
-
-// 处理图片加载成功
-const handleImageLoad = () => {
-  // 可以在这里添加加载成功的逻辑
-};
-
-// 计算进度条宽度（最大100抽显示为满条）
-const getProgressWidth = (pullCount: number): string => {
-  const maxPulls = 100;
-  const percentage = Math.min((pullCount / maxPulls) * 100, 100);
-  return `${percentage}%`;
-};
-
-// 处理抽卡记录，按卡池分组
-const gachaPools = computed((): GachaPool[] => {
-  const poolMap = new Map<string, GachaPool>();
-  
-  // 初始化所有卡池
-  gachaCategories.value.forEach(category => {
-    poolMap.set(category.id, {
-      id: category.id,
-      name: category.name,
-      totalPulls: 0,
-      sixStarCount: 0,
-      sixStars: [],
-      isLimited: isLimitedPool(category.name)
-    });
-  });
-  
-  // 处理抽卡记录
-  gachaRecords.value.forEach(record => {
-    const pool = poolMap.get(record.pool);
-    if (!pool) return;
-    
-    // 增加总抽数
-    pool.totalPulls += record.chars.length;
-    
-    // 检查6星干员
-    record.chars.forEach(char => {
-      if (char.rarity === 6) {
-        pool.sixStarCount++;
-        
-        // 查找这是第几抽获得的6星
-        const pullIndex = record.chars.indexOf(char) + 1;
-        const totalPullsForThis6Star = pool.totalPulls - record.chars.length + pullIndex;
-        
-        pool.sixStars.push({
-          name: char.name,
-          pullCount: totalPullsForThis6Star,
-          timestamp: record.ts
-        });
-      }
-    });
-  });
-  
-  // 按时间排序6星记录
-  poolMap.forEach(pool => {
-    pool.sixStars.sort((a, b) => a.timestamp - b.timestamp);
-  });
-  
-  return Array.from(poolMap.values()).filter(pool => pool.totalPulls > 0);
+// 登录对话框相关
+const showLoginDialog = ref(false);
+const loginForm = ref({
+  phone: '',
+  password: '',
+  saveInfo: false
 });
+const loginResolve = ref<((value: { phone: string; password: string; saveInfo: boolean }) => void) | null>(null);
 
-// 获取卡池分类
-const fetchGachaCategories = async (): Promise<void> => {
-  try {
-    const uid = authStore.mainUid;
-    if (!uid) {
-      throw new Error('未找到用户UID');
+// UID对话框相关
+const showUidDialog = ref(false);
+const uidInput = ref('');
+const uidResolve = ref<((value: string) => void) | null>(null);
+
+// 显示登录对话框
+const showLoginDialogAsync = (): Promise<{ phone: string; password: string; saveInfo: boolean }> => {
+  return new Promise((resolve) => {
+    loginResolve.value = resolve;
+    showLoginDialog.value = true;
+
+    // 预填充保存的信息
+    const savedPhone = localStorage.getItem('hg_phone');
+    const savedPassword = localStorage.getItem('hg_password');
+    if (savedPhone && savedPassword) {
+      loginForm.value.phone = savedPhone;
+      loginForm.value.password = savedPassword;
+      loginForm.value.saveInfo = true;
     }
-    
-    // 获取认证凭证
-    const { cred, token: signToken } = await authStore.ensureSklandCred();
-    
-    logger.debug('获取卡池分类', { uid });
-    gachaCategories.value = await GachaAPI.getGachaCategories(cred, signToken, uid);
-    logger.info('成功获取卡池分类', { count: gachaCategories.value.length });
-  } catch (err) {
-    logger.error('获取卡池分类失败', err);
-    throw err;
+  });
+};
+
+// 关闭登录对话框
+const closeLoginDialog = (): void => {
+  showLoginDialog.value = false;
+  loginForm.value = { phone: '', password: '', saveInfo: false };
+  if (loginResolve.value) {
+    loginResolve.value(null as any);
   }
 };
 
-// 获取抽卡记录
-const fetchGachaRecords = async (): Promise<void> => {
-  try {
-    const uid = authStore.mainUid;
-    if (!uid) {
-      throw new Error('未找到用户UID');
-    }
-    
-    // 获取认证凭证
-    const { cred, token: signToken } = await authStore.ensureSklandCred();
-    
-    const allRecords: GachaRecord[] = [];
-    
-    // 为每个卡池获取记录
-    for (const category of gachaCategories.value) {
-      try {
-        logger.debug('获取卡池记录', { categoryId: category.id, poolName: category.name });
-        
-        const response = await GachaAPI.getGachaRecords(cred, signToken, uid, category.id, 100);
-        allRecords.push(...response.list);
-        
-        // 如果还有更多记录，继续获取
-        let currentResponse = response;
-        while (currentResponse.hasMore && currentResponse.nextGachaTs) {
-          currentResponse = await GachaAPI.getMoreGachaRecords(
-            cred,
-            signToken,
-            uid,
-            category.id,
-            currentResponse.nextGachaTs,
-            currentResponse.nextPos,
-            100
-          );
-          allRecords.push(...currentResponse.list);
-        }
-        
-        logger.debug('成功获取卡池记录', { 
-          categoryId: category.id, 
-          recordCount: response.list.length 
-        });
-      } catch (err) {
-        logger.warn('获取单个卡池记录失败', { categoryId: category.id, error: err });
-        // 继续处理其他卡池
-      }
-    }
-    
-    // 按时间排序记录（最新的在前）
-    gachaRecords.value = allRecords.sort((a, b) => b.ts - a.ts);
-    logger.info('成功获取所有抽卡记录', { totalCount: gachaRecords.value.length });
-  } catch (err) {
-    logger.error('获取抽卡记录失败', err);
-    throw err;
+// 显示UID输入对话框
+const showUidDialogAsync = (): Promise<string> => {
+  return new Promise((resolve) => {
+    uidResolve.value = resolve;
+    showUidDialog.value = true;
+  });
+};
+
+// 关闭UID对话框
+const closeUidDialog = (): void => {
+  showUidDialog.value = false;
+  uidInput.value = '';
+  if (uidResolve.value) {
+    uidResolve.value(null as any);
   }
 };
 
-// 刷新数据
-const refreshData = async (): Promise<void> => {
-  loading.value = true;
-  error.value = null;
-  
+// 确认UID
+const confirmUid = (): void => {
+  if (!uidInput.value || uidInput.value.length !== 8 || !/^\d{8}$/.test(uidInput.value)) {
+    return;
+  }
+
+  if (uidResolve.value) {
+    uidResolve.value(uidInput.value);
+    uidResolve.value = null;
+  }
+
+  showUidDialog.value = false;
+  uidInput.value = '';
+};
+
+// 确认登录
+const confirmLogin = (): void => {
+  if (!loginForm.value.phone || !loginForm.value.password) {
+    return;
+  }
+
+  if (loginResolve.value) {
+    loginResolve.value({ ...loginForm.value });
+    loginResolve.value = null;
+  }
+
+  showLoginDialog.value = false;
+
+  // 如果选择保存，保存到localStorage
+  if (loginForm.value.saveInfo) {
+    localStorage.setItem('hg_phone', loginForm.value.phone);
+    localStorage.setItem('hg_password', loginForm.value.password);
+  }
+
+  // 清空表单
+  loginForm.value = { phone: '', password: '', saveInfo: false };
+};
+
+// 测试手机号密码登录
+const testPhonePasswordLogin = async (): Promise<void> => {
   try {
-    await fetchGachaCategories();
-    await fetchGachaRecords();
-    logger.info('寻访记录刷新成功');
-  } catch (err) {
-    logger.error('刷新寻访记录失败', err);
-    error.value = err instanceof Error ? err.message : '刷新失败，请重试';
+    loading.value = true;
+    error.value = null;
+    result.value = null;
+
+    // 显示登录对话框
+    const loginData = await showLoginDialogAsync();
+
+    console.log('开始测试手机号密码登录...');
+
+    // 1. 获取鹰角网络token
+    const hgToken = await SimpleGachaAPI.getHypergryphTokenByPhonePassword(loginData.phone, loginData.password);
+    console.log('获取到的鹰角网络token:', hgToken.substring(0, 20) + '...');
+
+    // 2. 测试获取用户信息
+    console.log('测试获取用户信息...');
+    console.log('传递给getUserInfo的token:', hgToken);
+    console.log('token类型:', typeof hgToken);
+    console.log('token长度:', hgToken?.length);
+    const userInfo = await SimpleGachaAPI.getUserInfo(hgToken);
+    console.log('获取到的用户信息:', userInfo);
+
+    result.value = {
+      step: '登录成功',
+      token: hgToken.substring(0, 50) + '...',
+      userInfo: userInfo
+    };
+
+  } catch (err: unknown) {
+    console.error('测试登录失败:', err);
+    error.value = err instanceof Error ? err.message : '未知错误';
   } finally {
     loading.value = false;
   }
 };
 
-// 组件挂载时加载数据
-onMounted(() => {
-  if (authStore.isLogin && authStore.mainUid) {
-    refreshData();
+// 测试完整API流程
+const testFullFlow = async (): Promise<void> => {
+  try {
+    loading.value = true;
+    error.value = null;
+    result.value = null;
+
+    // 1. 获取登录信息
+    const loginData = await showLoginDialogAsync();
+
+    // 2. 获取token
+    const token = await SimpleGachaAPI.getHypergryphTokenByPhonePassword(loginData.phone, loginData.password);
+    console.log('步骤1: 获取token成功');
+
+    // 3. 获取用户信息
+    console.log('步骤2: 准备获取用户信息，token:', token);
+    console.log('token类型:', typeof token);
+    console.log('token长度:', token?.length);
+    const userInfo = await SimpleGachaAPI.getUserInfo(token);
+    console.log('步骤2: 获取用户信息成功');
+
+    // 4. 获取UID
+    const uid = await showUidDialogAsync();
+    console.log('步骤3: 获取UID成功:', uid);
+
+    // 5. 获取卡池分类
+    const categories = await SimpleGachaAPI.getGachaCategories(userInfo, token, uid);
+    console.log('步骤4: 获取卡池分类成功');
+
+    result.value = {
+      step: '完整流程测试成功',
+      token: token.substring(0, 50) + '...',
+      userInfo: userInfo,
+      uid: uid,
+      categories: categories
+    };
+
+  } catch (err: unknown) {
+    console.error('测试完整流程失败:', err);
+    error.value = err instanceof Error ? err.message : '未知错误';
+  } finally {
+    loading.value = false;
   }
-});
+};
+
+// 清除保存的账号信息
+const clearSavedCredentials = (): void => {
+  if (confirm('确定要清除保存的账号信息吗？')) {
+    localStorage.removeItem('hg_phone');
+    localStorage.removeItem('hg_password');
+    alert('账号信息已清除');
+  }
+};
+
+// 打开调试浏览器
+const openDebugBrowser = async (): Promise<void> => {
+  try {
+    await (window as any).api.openDebugWindow('https://ak.hypergryph.com/user/headhunting');
+  } catch (err: unknown) {
+    console.error('打开调试浏览器失败:', err);
+    alert('打开调试浏览器失败: ' + (err instanceof Error ? err.message : '未知错误'));
+  }
+};
 </script>
 
 <style scoped>
@@ -343,7 +331,95 @@ onMounted(() => {
   gap: 12px;
 }
 
-.refresh-btn, .retry-btn {
+.test-btn {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 6px;
+  background-color: #52c41a;
+  color: white;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background-color 0.2s;
+}
+
+.test-btn:hover {
+  background-color: #73d13d;
+}
+
+.clear-btn {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 6px;
+  background-color: #ff4d4f;
+  color: white;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background-color 0.2s;
+}
+
+.clear-btn:hover {
+  background-color: #ff7875;
+}
+
+.flow-btn {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 6px;
+  background-color: #722ed1;
+  color: white;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background-color 0.2s;
+}
+
+.flow-btn:hover {
+  background-color: #9254de;
+}
+
+.debug-btn {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 6px;
+  background-color: #fa8c16;
+  color: white;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background-color 0.2s;
+}
+
+.debug-btn:hover {
+  background-color: #ffa940;
+}
+
+.result {
+  background: #f8f9fa;
+  border: 1px solid #e9ecef;
+  border-radius: 8px;
+  padding: 20px;
+  margin-top: 20px;
+}
+
+.result h3 {
+  margin: 0 0 16px 0;
+  color: #333;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.result pre {
+  background: #fff;
+  border: 1px solid #e9ecef;
+  border-radius: 4px;
+  padding: 16px;
+  overflow-x: auto;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #666;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.retry-btn {
   padding: 8px 16px;
   border: none;
   border-radius: 6px;
@@ -352,15 +428,11 @@ onMounted(() => {
   cursor: pointer;
   font-size: 14px;
   transition: background-color 0.2s;
+  margin-top: 12px;
 }
 
-.refresh-btn:hover, .retry-btn:hover {
+.retry-btn:hover {
   background-color: #40a9ff;
-}
-
-.refresh-btn:disabled {
-  background-color: #d9d9d9;
-  cursor: not-allowed;
 }
 
 .loading {
@@ -396,160 +468,116 @@ onMounted(() => {
   color: #ff4d4f;
 }
 
-.pools-container {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
-  gap: 20px;
+/* 登录对话框样式 */
+.login-dialog-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
 }
 
-.pool-card {
+.login-dialog {
   background: white;
   border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  overflow: hidden;
-  transition: transform 0.2s, box-shadow 0.2s;
+  padding: 24px;
+  width: 400px;
+  max-width: 90vw;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
 }
 
-.pool-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
-}
-
-.pool-header {
-  padding: 16px 20px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-}
-
-.pool-badge {
-  display: inline-block;
-  background: rgba(255, 255, 255, 0.2);
-  padding: 4px 8px;
-  border-radius: 4px;
-  font-size: 12px;
-  font-weight: 500;
-  margin-bottom: 8px;
-}
-
-.badge-text {
-  color: #fff;
-}
-
-.pool-name {
-  margin: 0 0 8px 0;
+.login-dialog h3 {
+  margin: 0 0 20px 0;
+  color: #333;
   font-size: 18px;
   font-weight: 600;
 }
 
-.pool-stats {
-  display: flex;
-  gap: 16px;
+.form-group {
+  margin-bottom: 16px;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 6px;
+  color: #666;
   font-size: 14px;
-  opacity: 0.9;
-}
-
-.pool-content {
-  padding: 20px;
-}
-
-.no-six-star {
-  text-align: center;
-  padding: 40px 20px;
-  color: #999;
-}
-
-.six-stars-list {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.six-star-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px;
-  background: #f8f9fa;
-  border-radius: 8px;
-  border-left: 4px solid #ffd700;
-}
-
-.character-info {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex: 1;
-}
-
-.character-avatar {
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
-  object-fit: cover;
-  border: 2px solid #fff;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-}
-
-.character-details {
-  flex: 1;
-}
-
-.character-name {
-  margin: 0 0 4px 0;
-  font-size: 16px;
-  font-weight: 600;
-  color: #333;
-}
-
-.pull-info {
-  margin: 0;
-  font-size: 12px;
-  color: #666;
-}
-
-.progress-container {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-width: 120px;
-}
-
-.progress-bar {
-  flex: 1;
-  height: 6px;
-  background: #e9ecef;
-  border-radius: 3px;
-  overflow: hidden;
-}
-
-.progress-fill {
-  height: 100%;
-  background: linear-gradient(90deg, #ffd700, #ffed4e);
-  border-radius: 3px;
-  transition: width 0.3s ease;
-}
-
-.progress-text {
-  font-size: 12px;
-  color: #666;
   font-weight: 500;
-  min-width: 40px;
-  text-align: right;
+}
+
+.form-group input[type="text"],
+.form-group input[type="tel"],
+.form-group input[type="password"] {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #d9d9d9;
+  border-radius: 6px;
+  font-size: 14px;
+  transition: border-color 0.2s;
+}
+
+.form-group input:focus {
+  outline: none;
+  border-color: #1890ff;
+  box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.2);
+}
+
+.form-group input[type="checkbox"] {
+  margin-right: 8px;
+}
+
+.dialog-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+  margin-top: 24px;
+}
+
+.cancel-btn {
+  padding: 8px 16px;
+  border: 1px solid #d9d9d9;
+  border-radius: 6px;
+  background-color: white;
+  color: #666;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s;
+}
+
+.cancel-btn:hover {
+  border-color: #40a9ff;
+  color: #40a9ff;
+}
+
+.confirm-btn {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 6px;
+  background-color: #1890ff;
+  color: white;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background-color 0.2s;
+}
+
+.confirm-btn:hover:not(:disabled) {
+  background-color: #40a9ff;
+}
+
+.confirm-btn:disabled {
+  background-color: #d9d9d9;
+  cursor: not-allowed;
 }
 
 @media (max-width: 768px) {
-  .pools-container {
-    grid-template-columns: 1fr;
-  }
-  
-  .six-star-item {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 12px;
-  }
-  
-  .progress-container {
-    width: 100%;
+  .login-dialog {
+    width: 350px;
+    padding: 20px;
   }
 }
 </style>

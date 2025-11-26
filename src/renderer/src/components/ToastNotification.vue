@@ -76,8 +76,8 @@ onUnmounted(() => {
 /* ==================== 浮窗基础样式 ==================== */
 .toast-notification {
   position: fixed;
-  top: 20px;
-  right: 20px;
+  top: 80px;
+  left: 20px;
   background: #2d2d2d;
   border: 1px solid #404040;
   border-radius: 8px;
@@ -90,13 +90,13 @@ onUnmounted(() => {
   gap: 16px;
   min-width: 300px;
   max-width: 450px;
-  animation: toastSlideIn 0.3s ease-out forwards;
+  animation: toastSlideInLeft 0.3s ease-out forwards;
   backdrop-filter: blur(10px);
 }
 
 /* 浮窗退出状态 */
 .toast-notification.leaving {
-  animation: toastSlideOut 0.3s ease-in forwards;
+  animation: toastSlideOutLeft 0.3s ease-in forwards;
 }
 
 /* ==================== 浮窗类型样式 ==================== */
@@ -152,10 +152,10 @@ onUnmounted(() => {
 }
 
 /* ==================== 浮窗动画 ==================== */
-@keyframes toastSlideIn {
+@keyframes toastSlideInLeft {
   from {
     opacity: 0;
-    transform: translateX(100%);
+    transform: translateX(-100%);
   }
   to {
     opacity: 1;
@@ -163,23 +163,23 @@ onUnmounted(() => {
   }
 }
 
-@keyframes toastSlideOut {
+@keyframes toastSlideOutLeft {
   from {
     opacity: 1;
     transform: translateX(0);
   }
   to {
     opacity: 0;
-    transform: translateX(100%);
+    transform: translateX(-100%);
   }
 }
 
 /* ==================== 响应式设计 ==================== */
 @media (max-width: 768px) {
   .toast-notification {
-    top: 10px;
-    right: 10px;
+    top: 60px;
     left: 10px;
+    right: 10px;
     max-width: none;
   }
 }

@@ -4,6 +4,8 @@
  * 提供日志导出、清除和管理功能
  */
 
+import packageJson from '../../../../package.json';
+
 export enum LogLevel {
   DEBUG = 'DEBUG',
   INFO = 'INFO',
@@ -62,7 +64,7 @@ class LoggerService {
    */
   private readonly APP_INFO = {
     name: 'PRTS系统助手',
-    version: '0.2.6.1'
+    version: packageJson.version || ''
   };
 
   /**

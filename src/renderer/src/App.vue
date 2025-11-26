@@ -6,6 +6,7 @@ import LoginWindow from '@components/LoginWindow.vue'
 import Setting from '@components/Setting.vue'
 import ToastNotification from '@components/ToastNotification.vue'
 import HeadhuntingRecord from '@components/headhuntingrecord.vue'
+import TitleBar from '@components/TitleBar.vue'
 import { useAuthStore } from '@stores/auth'
 import { useGameDataStore } from '@stores/gameData'
 import { ref, onMounted, onUnmounted, provide, computed } from 'vue'
@@ -323,8 +324,10 @@ onMounted(() => {
     if (isRestored) {
       console.log('神经连接成功');
       if (authStore.playerData) {
+        // 数据已经完整，直接显示欢迎信息
         showSuccess('欢迎回来，博士！');
       } else {
+        // 数据不完整，显示同步提示，数据加载完成后会显示连接成功通知
         showInfo('正在同步神经中枢...');
       }
     } else {
@@ -368,6 +371,9 @@ const componentMap: Record<string, any> = {
 <template>
   <div class="app-container" @click="handleClickOutside" @contextmenu="showContextMenu">
 
+    <!-- 自定义标题栏 -->
+    <TitleBar />
+
     <!-- ==================== 全局右键菜单 ==================== -->
     <div
       v-if="contextMenuVisible"
@@ -394,7 +400,7 @@ const componentMap: Record<string, any> = {
     <header class="app-header">
       <div class="header-left">
         <img alt="logo" class="logo" src="@assets/logo_rhodes_island.svg" />
-        <h1>PRTS Beta</h1>
+        <h1>PRTS系统</h1>
       </div>
 
       <!-- 用户图标放在右侧 -->
@@ -426,6 +432,9 @@ const componentMap: Record<string, any> = {
     <div class="main-layout">
       <!-- 侧边栏 -->
       <aside class="sidebar">
+        <!-- MENU 标识 -->
+        <div class="menu-label">MENU</div>
+
         <!-- 导航菜单 -->
         <nav class="navigation">
           <div class="nav-section">
@@ -448,12 +457,12 @@ const componentMap: Record<string, any> = {
               >
                 材料计算
               </li>
-              <li
-                :class="['nav-item', { 'nav-item-active': activeComponent === 'HeadhuntingRecord' }]"
-                @click="switchComponent('HeadhuntingRecord')"
-              >
-                寻访记录
-              </li>
+<!--              <li-->
+<!--                :class="['nav-item', { 'nav-item-active': activeComponent === 'HeadhuntingRecord' }]"-->
+<!--                @click="switchComponent('HeadhuntingRecord')"-->
+<!--              >-->
+<!--                寻访记录-->
+<!--              </li>-->
             </ul>
           </div>
         </nav>
@@ -575,6 +584,7 @@ body {
   border-bottom: 1px solid #404040;
   display: flex;
   align-items: center;
+  margin-top: 32px; /* 为自定义标题栏留出空间 */
   justify-content: space-between;
   padding: 0 20px;
   position: relative;
@@ -722,16 +732,33 @@ body {
 
 /* ==================== 侧边栏样式 ==================== */
 .sidebar {
-  width: 150px;
-  background: #2d2d2d;
+  width: 180px;
+  background: #2d2d2d; /* 保持原有背景色不变 */
   border-right: 1px solid #404040;
-  padding: 20px;
+  padding: 30px 0;
   display: flex;
   flex-direction: column;
-  gap: 24px;
   overflow-y: auto;
   -ms-overflow-style: none;
   scrollbar-width: none;
+  position: relative;
+}
+
+/* MENU 标签样式（调整位置、大小和颜色） */
+.menu-label {
+  position: absolute;
+  top: 10px; /* 上移位置 */
+  left: 15px; /* 左移位置 */
+  font-size: 50px; /* 增大字体 */
+  font-weight: 900; /* 加粗 */
+  font-family: 'Microsoft YaHei', sans-serif;
+  color: #44485a; /* 灰色 */
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  pointer-events: none;
+  opacity: 0.8;
+  z-index: 1;
+  line-height: 1;
 }
 
 .sidebar::-webkit-scrollbar {
@@ -741,6 +768,10 @@ body {
 /* ==================== 导航菜单样式 ==================== */
 .navigation {
   flex: 1;
+  position: relative;
+  z-index: 2;
+  margin-top: 60px; /* 调整与MENU标签的间距 */
+  padding: 0 10px;
 }
 
 .nav-menu {
@@ -749,25 +780,79 @@ body {
   padding: 0;
 }
 
+/* 未选中按钮样式 */
 .nav-item {
-  padding: 8px 16px;
+  padding: 14px 20px;
   margin: 4px 0;
-  border-radius: 6px;
+  border-radius: 0;
   cursor: pointer;
   transition: all 0.3s ease;
-  font-size: 14px;
-  color: #ccc;
-}
-
-.nav-item:hover {
-  background: #3a3a3a;
-  color: #4a90e2;
-}
-
-.nav-item-active {
-  background: #4a90e2;
-  color: white;
+  font-size: 15px;
+  color: #c0c6e0;
   font-weight: 500;
+  position: relative;
+  overflow: hidden;
+  background: transparent;
+}
+
+/* 未选中按钮hover效果 */
+.nav-item:hover:not(.nav-item-active) {
+  color: #ffffff;
+  background: rgba(78, 116, 255, 0.08);
+}
+
+/* 选中按钮样式 - 带渐变蔓延动画 */
+.nav-item-active {
+  padding: 14px 20px;
+  margin: 4px 0;
+  color: #59b4ed;
+  font-weight: 500;
+  position: relative;
+  overflow: hidden;
+  background: transparent;
+}
+
+/* 渐变背景层 - 用于动画效果 */
+.nav-item-active::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  width: 100%;
+  background: linear-gradient(90deg,
+  rgba(78, 116, 255, 0.2) 0%,
+  rgba(78, 116, 255, 0.05) 100%);
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+  z-index: -1;
+  animation: gradientSpread 0.5s forwards;
+}
+
+/* 左侧渐变条 */
+.nav-item-active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  width: 4px;
+  background: linear-gradient(180deg,
+  #4ec1ff 0%,
+  #96def8 50%,
+  #0f9bf6 100%);
+  z-index: 1;
+}
+
+/* 渐变蔓延动画 */
+@keyframes gradientSpread {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
 }
 
 /* ==================== 主内容区样式 ==================== */

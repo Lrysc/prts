@@ -2,9 +2,14 @@
 
 主要功能：公招计算，森空岛签到，游戏数据查看
 
-## 参考项目
-[Skland_API](https://github.com/ProbiusOfficial/Skland_API)  API\
-[Arkscreen](https://github.com/blueskybone/ArkScreen)  项目解析部分数据
+安装使用时，请阅读软件协议
+
+### 软件计划在遥远的未来或许会迎来使用原生语言重新构建，敬请期待（画大饼）
+
+## 参考/使用项目
+[Skland_API](https://github.com/ProbiusOfficial/Skland_API)  API  \
+[Arkscreen](https://github.com/blueskybone/ArkScreen)  项目解析部分数据  \
+[ArknightsGameResource](https://github.com/yuanyan3060/ArknightsGameResource) 干员图片获取
 
 
 # ToDoList
@@ -32,6 +37,14 @@
 
 
 ## 更新日志
+
+
+### v0.2.8
+* 添加记住账号信息的选项，登录不再需要重新输入
+* 优化页面显示
+* 在设置中添加了当前版本查看
+* 添加了软件协议，请遵守协议内容
+*
 
 ### v0.2.7
 

@@ -37,6 +37,31 @@ export default defineConfig({
           changeOrigin: true,
           rewrite: (path) => path.replace(/^\/api\/skland/, ''),
           secure: true
+        },
+        '/api/web': {
+          target: 'https://web-api.hypergryph.com',
+          changeOrigin: true,
+          rewrite: (path) => path.replace(/^\/api\/web/, ''),
+          secure: true,
+          configure: (proxy, _options) => {
+            proxy.on('proxyReq', (proxyReq, req) => {
+              console.log('代理请求头 Cookie:', req.headers.cookie);
+              // 确保Cookie头被正确转发
+              if (req.headers.cookie) {
+                proxyReq.setHeader('Cookie', req.headers.cookie);
+              }
+            });
+            proxy.on('proxyRes', (proxyRes) => {
+              console.log('代理响应状态:', proxyRes.statusCode);
+              console.log('代理响应头:', proxyRes.headers);
+            });
+          }
+        },
+        '/api/ak': {
+          target: 'https://ak.hypergryph.com',
+          changeOrigin: true,
+          rewrite: (path) => path.replace(/^\/api\/ak/, ''),
+          secure: true
         }
       }
     }

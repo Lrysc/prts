@@ -480,12 +480,16 @@ onUnmounted(() => {
               <div class="account-phone-display">{{ selectedAccount!.phone }}</div>
               <div class="account-time-display">{{ formatLastUsed(selectedAccount!.lastUsed) }}</div>
             </div>
-            <!-- 右侧倒三角区域：点击展开下拉菜单 -->
+            <!-- 右侧下拉图标区域：点击展开下拉菜单 -->
             <div
               class="dropdown-arrow"
+              :class="{ expanded: showDropdown }"
               @click="toggleDropdown"
             >
-              <span class="arrow-icon" :class="{ expanded: showDropdown }">▼</span>
+              <div class="dropdown-icon-container">
+                <img src="@assets/restore.svg" alt="展开" class="dropdown-icon" />
+                <img src="@assets/restore.svg" alt="展开" class="dropdown-icon dropdown-icon-copy" />
+              </div>
             </div>
           </div>
 
@@ -798,15 +802,51 @@ onUnmounted(() => {
   background: rgba(255, 255, 255, 0.1);
 }
 
-/* 倒三角图标 */
-.arrow-icon {
-  font-size: 12px;
-  transition: transform 0.2s ease;
-  display: inline-block;
+/* 下拉图标容器 */
+.dropdown-icon-container {
+  position: relative;
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.arrow-icon.expanded {
-  transform: rotate(180deg);
+/* 下拉图标 */
+.dropdown-icon {
+  width: 16px;
+  height: 16px;
+  position: absolute;
+  transition: all 0.3s ease;
+  color: #ccc;
+}
+
+/* 下拉图标副本（用于动画） */
+.dropdown-icon-copy {
+  opacity: 0;
+  transform: translateY(0);
+}
+
+/* 收起状态：只显示一个菱形 */
+.dropdown-arrow:not(.expanded) .dropdown-icon {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.dropdown-arrow:not(.expanded) .dropdown-icon-copy {
+  opacity: 0;
+  transform: translateY(0);
+}
+
+/* 展开状态：两个菱形分别向上下展开形成交叉 */
+.dropdown-arrow.expanded .dropdown-icon {
+  opacity: 1;
+  transform: translateY(-4px);
+}
+
+.dropdown-arrow.expanded .dropdown-icon-copy {
+  opacity: 1;
+  transform: translateY(4px);
 }
 
 /* 下拉菜单 */

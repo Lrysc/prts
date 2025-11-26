@@ -206,9 +206,47 @@
         </div>
       </div>
 
-      <!-- 设置提示 -->
-      <div class="setting-tips">
-        <p>更多设置功能开发中...</p>
+      <!-- 系统功能 -->
+      <div class="system-functions-section">
+        <h3>系统功能</h3>
+        <div class="system-functions-card">
+          <div class="function-buttons">
+            <button
+              @click="checkForUpdates"
+              :disabled="isCheckingUpdate"
+              class="function-btn update-btn"
+              title="检查是否有新版本可用"
+            >
+              <span class="btn-text">
+                {{ isCheckingUpdate ? '检查中...' : '检查更新' }}
+              </span>
+            </button>
+
+            <button
+              @click="openDownloadPage"
+              class="function-btn download-btn"
+              title="前往 GitHub 下载最新版本"
+            >
+              <span class="btn-text">下载页面</span>
+            </button>
+
+            <button
+              @click="openGitHubRepo"
+              class="function-btn github-btn"
+              title="访问项目 GitHub 仓库"
+            >
+              <span class="btn-text">GitHub 仓库</span>
+            </button>
+
+            <button
+              @click="showAboutDialogFunc"
+              class="function-btn about-btn"
+              title="查看关于信息"
+            >
+              <span class="btn-text">关于软件</span>
+            </button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -263,6 +301,81 @@
         </div>
       </div>
     </div>
+
+    <!-- 自定义更新对话框 -->
+    <div v-if="showUpdateDialog && updateInfo" class="update-modal-overlay" @click="closeUpdateDialog">
+      <div class="update-modal-content" @click.stop>
+        <div class="update-modal-header">
+          <h3 class="update-title">发现新版本</h3>
+          <button class="update-close-btn" @click="closeUpdateDialog">×</button>
+        </div>
+        
+        <div class="update-modal-body">
+          <div class="version-info">
+            <div class="current-version">
+              <span class="version-label">当前版本：</span>
+              <span class="version-number">{{ updateInfo.currentVersion }}</span>
+            </div>
+            <div class="latest-version">
+              <span class="version-label">最新版本：</span>
+              <span class="version-number">{{ updateInfo.latestVersion }}</span>
+            </div>
+          </div>
+
+          <div class="release-info" v-if="updateInfo.releaseInfo">
+            <div class="release-date">
+              发布时间：{{ new Date(updateInfo.releaseInfo.published_at).toLocaleDateString('zh-CN') }}
+            </div>
+            
+            <div class="release-notes">
+              <h4>更新内容：</h4>
+              <div class="notes-content" v-html="renderMarkdown(updateInfo.releaseInfo.body)"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="update-modal-actions">
+          <button @click="closeUpdateDialog" class="update-btn cancel-btn">
+            稍后更新
+          </button>
+          <button @click="downloadAndInstall" class="update-btn confirm-btn">
+            下载并安装
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 关于软件对话框 -->
+    <div v-if="showAboutDialog" class="about-modal-overlay" @click="closeAboutDialog">
+      <div class="about-modal-content" @click.stop>
+        <div class="about-modal-header">
+          <div class="about-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z" fill="currentColor"/>
+            </svg>
+          </div>
+          <h3 class="about-title">关于软件</h3>
+          <button class="about-close-btn" @click="closeAboutDialog">×</button>
+        </div>
+        
+        <div class="about-modal-body">
+          <div class="about-content" v-html="formatAboutContent(aboutContent)"></div>
+        </div>
+
+        <div class="about-modal-actions">
+          <button @click="closeAboutDialog" class="about-btn close-btn">
+            关闭
+          </button>
+        </div>
+      </div>
+    </div>
+    <!-- 版本号显示 -->
+    <div class="version-info">
+      Version {{ version }}
+    </div>
+    <div class="version-info">
+      本软件为开源软件，请勿用于商业用途。请遵守协议内容要求，禁止跳脸官方。
+    </div>
   </div>
 </template>
 
@@ -271,7 +384,12 @@ import { onMounted, watch, ref, computed, nextTick } from 'vue'
 import { useAuthStore } from '@stores/auth'
 import { useGameDataStore } from '@stores/gameData'
 import { logger, type LogEntry } from '@services/logger'
-import { showSuccess, showError, showWarning } from '@services/toastService'
+import { showSuccess, showError, showWarning, showInfo } from '@services/toastService'
+import { updaterService, type UpdateInfo } from '@services/updater'
+import packageJson from '../../../../package.json'
+
+// 版本号
+const version = ref(packageJson.version)
 
 // ==================== Store实例 ====================
 const authStore = useAuthStore()
@@ -285,6 +403,9 @@ const manualCopyTextarea = ref<HTMLTextAreaElement>()
 const showClearConfirmModal = ref(false)
 const isOpening = ref(false)
 const isClosing = ref(false)
+
+// 更新相关状态
+const isCheckingUpdate = ref(false)
 
 // ==================== 计算属性 ====================
 
@@ -664,6 +785,237 @@ const downloadFile = (content: string, filename: string, mimeType: string) => {
     throw error
   }
 }
+
+// ==================== 更新功能方法 ====================
+
+// 更新相关状态
+const updateInfo = ref<UpdateInfo | null>(null)
+const showUpdateDialog = ref(false)
+
+/**
+ * 检查更新
+ */
+const checkForUpdates = async () => {
+  console.log('检查更新按钮被点击')
+  if (isCheckingUpdate.value) return
+
+  isCheckingUpdate.value = true
+
+  try {
+    console.log('开始检查更新...')
+    logger.info('用户手动检查更新')
+    const result: UpdateInfo = await updaterService.checkForUpdates(true) // 改为true，显示无更新提示
+    console.log('更新检查结果:', result)
+    
+    updateInfo.value = result
+
+    if (result.hasUpdate && result.releaseInfo) {
+      // 显示自定义更新对话框
+      setTimeout(() => {
+        showUpdateDialog.value = true
+      }, 500)
+    }
+
+  } catch (error) {
+    console.error('检查更新异常:', error)
+    logger.error('检查更新失败', error)
+  } finally {
+    isCheckingUpdate.value = false
+  }
+}
+
+/**
+ * 打开下载页面
+ */
+const openDownloadPage = () => {
+  updaterService.openDownloadPage()
+}
+
+/**
+ * 打开 GitHub 仓库
+ */
+const openGitHubRepo = () => {
+  try {
+    window.open('https://github.com/Lrysc/prts', '_blank')
+    logger.info('用户访问 GitHub 仓库')
+    showSuccess('已打开 GitHub 仓库')
+  } catch (error) {
+    logger.error('打开 GitHub 仓库失败', error)
+    showError('打开 GitHub 仓库失败')
+  }
+}
+
+// 关于软件相关状态
+const showAboutDialog = ref(false)
+const aboutContent = ref('')
+
+/**
+ * 显示关于对话框
+ */
+const showAboutDialogFunc = () => {
+  console.log('关于软件按钮被点击')
+  const versionInfo = updaterService.getCurrentVersionInfo()
+  
+  aboutContent.value = `
+# PRTS 系统助手
+
+## 版本信息
+- **当前版本**：${versionInfo.version}
+- **构建时间**：${versionInfo.buildTime || '未知'}
+
+## 软件声明
+
+### 开源协议
+本软件为开源软件，遵循开源协议发布。
+
+### 使用限制
+- **禁止商业用途**：本软件仅供个人学习和研究使用，严禁用于任何商业目的。
+- **遵守协议要求**：使用本软件时，请严格遵守相关协议条款。
+- **禁止跳脸官方**：严禁使用本软件对游戏官方进行任何形式的挑衅或不当行为。
+
+### 免责声明
+本软件仅供学习和交流使用，使用者应自行承担使用风险。开发者不对因使用本软件而产生的任何后果承担责任。
+
+## 项目信息
+- **开源地址**：https://github.com/Lrysc/prts
+- **问题反馈**：请在GitHub Issues中提交问题和建议
+- **技术支持**：欢迎提交Pull Request参与项目开发
+
+## 版权信息
+Copyright © 2024 Lrysc. All rights reserved.
+  `.trim()
+
+  showAboutDialog.value = true
+  logger.info('用户查看关于信息')
+}
+
+/**
+ * 关闭关于对话框
+ */
+const closeAboutDialog = () => {
+  showAboutDialog.value = false
+}
+
+/**
+ * 简单的 Markdown 渲染器
+ */
+const renderMarkdown = (text: string): string => {
+  if (!text) return ''
+  
+  // 限制显示长度
+  const maxLength = 300
+  const truncatedText = text.length > maxLength ? text.substring(0, maxLength) + '...' : text
+  
+  let html = truncatedText
+  
+  // 处理标题 (# ## ### ####)
+  html = html.replace(/^#### (.*$)/gim, '<h4 class="md-h4">$1</h4>')
+  html = html.replace(/^### (.*$)/gim, '<h3 class="md-h3">$1</h3>')
+  html = html.replace(/^## (.*$)/gim, '<h2 class="md-h2">$1</h2>')
+  html = html.replace(/^# (.*$)/gim, '<h1 class="md-h1">$1</h1>')
+  
+  // 处理粗体 (**text**)
+  html = html.replace(/\*\*(.+?)\*\*/g, '<strong class="md-strong">$1</strong>')
+  
+  // 处理斜体 (*text*)
+  html = html.replace(/\*(.+?)\*/g, '<em class="md-em">$1</em>')
+  
+  // 处理代码块 (```code```)
+  html = html.replace(/```(.*?)```/gs, '<pre class="md-code-block"><code>$1</code></pre>')
+  
+  // 处理行内代码 (`code`)
+  html = html.replace(/`(.+?)`/g, '<code class="md-inline-code">$1</code>')
+  
+  // 处理链接 [text](url)
+  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" class="md-link">$1</a>')
+  
+  // 处理无序列表 (- item 或 * item)
+  html = html.replace(/^[\-\*] (.+)$/gim, '<li class="md-li">$1</li>')
+  html = html.replace(/(<li class="md-li">.*<\/li>)/s, '<ul class="md-ul">$1</ul>')
+  
+  // 处理有序列表 (1. item)
+  html = html.replace(/^\d+\. (.+)$/gim, '<li class="md-li-ol">$1</li>')
+  html = html.replace(/(<li class="md-li-ol">.*<\/li>)/s, '<ol class="md-ol">$1</ol>')
+  
+  // 处理换行
+  html = html.replace(/\n\n/g, '</p><p class="md-p">')
+  html = '<p class="md-p">' + html + '</p>'
+  
+  // 清理空的段落标签
+  html = html.replace(/<p class="md-p"><\/p>/g, '')
+  html = html.replace(/<p class="md-p">(.*?)<\/p>/g, (match, p1) => {
+    if (p1.trim() === '') return ''
+    if (p1.includes('<h') || p1.includes('<ul') || p1.includes('<ol') || p1.includes('<pre')) {
+      return p1
+    }
+    return '<p class="md-p">' + p1 + '</p>'
+  })
+  
+  return html
+}
+
+
+
+/**
+ * 关闭更新对话框
+ */
+const closeUpdateDialog = () => {
+  showUpdateDialog.value = false
+  updateInfo.value = null
+}
+
+/**
+ * 格式化关于内容
+ */
+const formatAboutContent = (content: string) => {
+  return content
+    .replace(/^# (.+)$/gm, '<h1 class="about-h1">$1</h1>')
+    .replace(/^## (.+)$/gm, '<h2 class="about-h2">$1</h2>')
+    .replace(/^### (.+)$/gm, '<h3 class="about-h3">$1</h3>')
+    .replace(/^\*\*(.+?)\*\*:/gm, '<strong class="about-strong">$1</strong>:')
+    .replace(/^\* (.+)$/gm, '<li class="about-li">$1</li>')
+    .replace(/^- (.+)$/gm, '<li class="about-li">$1</li>')
+    .replace(/\n\n/g, '</p><p class="about-p">')
+    .replace(/^/, '<p class="about-p">')
+    .replace(/$/, '</p>')
+    .replace(/<li class="about-li">/g, '<ul class="about-ul"><li class="about-li">')
+    .replace(/<\/li>/g, '</li></ul>')
+    .replace(/<\/ul><ul class="about-ul">/g, '')
+    .replace(/https:\/\/github\.com\/Lrysc\/prts/g, '<a href="https://github.com/Lrysc/prts" target="_blank" class="about-link">https://github.com/Lrysc/prts</a>')
+}
+
+/**
+ * 下载并安装更新
+ */
+const downloadAndInstall = async () => {
+  if (!updateInfo.value?.releaseInfo) return
+  
+  try {
+    console.log('开始下载并安装更新...')
+    showInfo('正在准备下载更新...')
+    
+    // 打开下载页面
+    updaterService.openDownloadPage()
+    
+    // 关闭对话框
+    closeUpdateDialog()
+    
+    // 显示提示
+    showSuccess('已打开下载页面，请下载最新版本进行安装')
+    
+    logger.info('用户选择下载并安装更新', {
+      fromVersion: updateInfo.value.currentVersion,
+      toVersion: updateInfo.value.latestVersion
+    })
+    
+  } catch (error) {
+    console.error('下载安装失败:', error)
+    showError('下载安装失败，请手动前往下载页面')
+    logger.error('下载安装更新失败', error)
+  }
+}
+
+
 
 // ==================== 生命周期和监听器 ====================
 
@@ -1645,6 +1997,631 @@ onMounted(() => {
   }
 }
 
+/* ==================== 自定义更新对话框样式 ==================== */
+.update-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10002;
+  animation: fadeIn 0.3s ease;
+  padding: 20px;
+  box-sizing: border-box;
+}
+
+.update-modal-content {
+  background: linear-gradient(135deg, #2d2d2d 0%, #1a1a1a 100%);
+  border-radius: 16px;
+  border: 2px solid #404040;
+  width: 100%;
+  max-width: 500px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  animation: slideIn 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+}
+
+.update-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px 24px;
+  background: rgba(63, 81, 181, 0.1);
+  border-bottom: 1px solid #404040;
+  position: relative;
+}
+
+.update-title {
+  color: #ffffff;
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.update-close-btn {
+  background: none;
+  border: none;
+  color: #999;
+  font-size: 24px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+  position: absolute;
+  right: 20px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.update-close-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: white;
+}
+
+.update-modal-body {
+  padding: 24px;
+  flex: 1;
+  overflow-y: auto;
+  /* 隐藏滚动条 */
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE and Edge */
+}
+
+.update-modal-body::-webkit-scrollbar {
+  display: none; /* Chrome, Safari, Opera */
+}
+
+.version-info {
+  background: rgba(63, 81, 181, 0.05);
+  border-radius: 12px;
+  padding: 20px;
+  margin: 16px;
+  border: 1px solid rgba(63, 81, 181, 0.2);
+}
+
+.current-version,
+.latest-version {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.current-version:last-child,
+.latest-version:last-child {
+  margin-bottom: 0;
+}
+
+.version-label {
+  color: #ccc;
+  font-size: 14px;
+}
+
+.version-number {
+  color: #3f51b5;
+  font-size: 16px;
+  font-weight: 600;
+  background: rgba(63, 81, 181, 0.1);
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+
+.current-version .version-number {
+  color: #f44336;
+  background: rgba(244, 67, 54, 0.1);
+}
+
+.latest-version .version-number {
+  color: #4caf50;
+  background: rgba(76, 175, 80, 0.1);
+}
+
+.release-info {
+  color: #e0e0e0;
+}
+
+.release-date {
+  color: #999;
+  font-size: 12px;
+  margin-bottom: 16px;
+}
+
+.release-notes h4 {
+  color: #9feaf9;
+  margin: 0 0 12px 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.notes-content {
+  background: #1a1a1a;
+  border-radius: 8px;
+  padding: 16px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: #ccc;
+  border: 1px solid #333;
+}
+
+/* Markdown 样式 */
+.notes-content .md-p {
+  margin: 8px 0;
+  color: #ccc;
+}
+
+.notes-content .md-h1 {
+  font-size: 20px;
+  font-weight: bold;
+  color: #fff;
+  margin: 16px 0 8px 0;
+  border-bottom: 2px solid #444;
+  padding-bottom: 4px;
+}
+
+.notes-content .md-h2 {
+  font-size: 18px;
+  font-weight: bold;
+  color: #fff;
+  margin: 14px 0 6px 0;
+  border-bottom: 1px solid #444;
+  padding-bottom: 2px;
+}
+
+.notes-content .md-h3 {
+  font-size: 16px;
+  font-weight: bold;
+  color: #f0f0f0;
+  margin: 12px 0 4px 0;
+}
+
+.notes-content .md-h4 {
+  font-size: 14px;
+  font-weight: bold;
+  color: #e0e0e0;
+  margin: 10px 0 4px 0;
+}
+
+.notes-content .md-strong {
+  color: #fff;
+  font-weight: bold;
+}
+
+.notes-content .md-em {
+  color: #ddd;
+  font-style: italic;
+}
+
+.notes-content .md-code-block {
+  background: #2d2d2d;
+  border: 1px solid #444;
+  border-radius: 4px;
+  padding: 12px;
+  margin: 8px 0;
+  overflow-x: auto;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 13px;
+  color: #f8f8f2;
+}
+
+.notes-content .md-inline-code {
+  background: #2d2d2d;
+  border: 1px solid #444;
+  border-radius: 3px;
+  padding: 2px 4px;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 13px;
+  color: #f8f8f2;
+}
+
+.notes-content .md-link {
+  color: #4fc3f7;
+  text-decoration: none;
+}
+
+.notes-content .md-link:hover {
+  color: #29b6f6;
+  text-decoration: underline;
+}
+
+.notes-content .md-ul, .notes-content .md-ol {
+  margin: 8px 0;
+  padding-left: 20px;
+}
+
+.notes-content .md-li {
+  margin: 4px 0;
+  color: #ccc;
+  list-style-type: disc;
+}
+
+.notes-content .md-li-ol {
+  margin: 4px 0;
+  color: #ccc;
+  list-style-type: decimal;
+}
+
+.update-modal-actions {
+  display: flex;
+  gap: 12px;
+  padding: 20px 24px;
+  background: rgba(0, 0, 0, 0.2);
+  border-top: 1px solid #404040;
+}
+
+.update-btn {
+  flex: 1;
+  padding: 12px 24px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.update-btn::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+  transition: left 0.5s ease;
+}
+
+.update-btn:hover::before {
+  left: 100%;
+}
+
+.cancel-btn {
+  background: #6c757d;
+  color: white;
+}
+
+.cancel-btn:hover {
+  background: #5a6268;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(108, 117, 125, 0.4);
+}
+
+.confirm-btn {
+  background: linear-gradient(135deg, #4caf50, #45a049);
+  color: white;
+}
+
+.confirm-btn:hover {
+  background: linear-gradient(135deg, #45a049, #3d8b40);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(76, 175, 80, 0.4);
+}
+
+
+
+/* ==================== 关于软件对话框样式 ==================== */
+.about-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10003;
+  animation: fadeIn 0.3s ease;
+  padding: 20px;
+  box-sizing: border-box;
+}
+
+.about-modal-content {
+  background: linear-gradient(135deg, #2d2d2d 0%, #1a1a1a 100%);
+  border-radius: 16px;
+  border: 2px solid #404040;
+  width: 100%;
+  max-width: 600px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  animation: slideIn 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+}
+
+.about-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px;
+  background: rgba(33, 150, 243, 0.1);
+  border-bottom: 1px solid #404040;
+  position: relative;
+}
+
+.about-icon {
+  color: #2196f3;
+}
+
+.about-title {
+  color: #ffffff;
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  flex: 1;
+  text-align: center;
+}
+
+.about-close-btn {
+  background: none;
+  border: none;
+  color: #999;
+  font-size: 24px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+  position: absolute;
+  right: 20px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.about-close-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: white;
+}
+
+.about-modal-body {
+  padding: 24px;
+  flex: 1;
+  overflow-y: auto;
+  /* 隐藏滚动条 */
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE and Edge */
+}
+
+.about-modal-body::-webkit-scrollbar {
+  display: none; /* Chrome, Safari, Opera */
+}
+
+.about-content {
+  color: #e0e0e0;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.about-h1 {
+  color: #2196f3;
+  font-size: 24px;
+  font-weight: 600;
+  margin: 0 0 16px 0;
+  text-align: center;
+}
+
+.about-h2 {
+  color: #9feaf9;
+  font-size: 18px;
+  font-weight: 600;
+  margin: 20px 0 12px 0;
+}
+
+.about-h3 {
+  color: #ffffff;
+  font-size: 16px;
+  font-weight: 600;
+  margin: 16px 0 8px 0;
+}
+
+.about-p {
+  margin: 0 0 12px 0;
+  color: #ccc;
+}
+
+.about-strong {
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.about-ul {
+  margin: 8px 0;
+  padding-left: 20px;
+}
+
+.about-li {
+  margin: 4px 0;
+  color: #ccc;
+}
+
+.about-link {
+  color: #2196f3;
+  text-decoration: none;
+  transition: color 0.2s ease;
+}
+
+.about-link:hover {
+  color: #64b5f6;
+  text-decoration: underline;
+}
+
+.about-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding: 20px 24px;
+  background: rgba(0, 0, 0, 0.2);
+  border-top: 1px solid #404040;
+}
+
+.about-btn {
+  padding: 12px 24px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  transition: all 0.3s ease;
+  min-width: 100px;
+}
+
+.about-btn.close-btn {
+  background: #6c757d;
+  color: white;
+}
+
+.about-btn.close-btn:hover {
+  background: #5a6268;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(108, 117, 125, 0.4);
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+  .update-modal-content {
+    margin: 10px;
+    max-width: none;
+  }
+  
+  .update-modal-header {
+    padding: 16px 20px;
+  }
+  
+  .update-modal-body {
+    padding: 20px;
+  }
+  
+  .update-modal-actions {
+    padding: 16px 20px;
+    flex-direction: column;
+  }
+  
+  .update-btn {
+    width: 100%;
+  }
+}
+
+
+
+/* 系统功能区域 */
+.system-functions-section {
+  background: #2d2d2d;
+  border-radius: 8px;
+  border: 1px solid #404040;
+  padding: 20px;
+  margin-bottom: 20px;
+}
+
+.system-functions-section h3 {
+  margin-bottom: 15px;
+  color: #9feaf9;
+  font-size: 16px;
+}
+
+.system-functions-card {
+  background: #3a3a3a;
+  border-radius: 6px;
+  border: 1px solid #4a4a4a;
+  padding: 15px;
+}
+
+.function-buttons {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin-bottom: 15px;
+}
+
+.function-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.3s ease;
+  color: white;
+  position: relative;
+  overflow: hidden;
+}
+
+.function-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none !important;
+}
+
+.function-btn:not(:disabled):hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.function-btn:not(:disabled):active {
+  transform: translateY(0);
+}
+
+/* 不同按钮的样式 */
+.update-btn {
+  background: linear-gradient(135deg, #007bff, #0056b3);
+}
+
+.update-btn:not(:disabled):hover {
+  box-shadow: 0 4px 12px rgba(0, 123, 255, 0.4);
+}
+
+.download-btn {
+  background: linear-gradient(135deg, #28a745, #1e7e34);
+}
+
+.download-btn:not(:disabled):hover {
+  box-shadow: 0 4px 12px rgba(40, 167, 69, 0.4);
+}
+
+.github-btn {
+  background: linear-gradient(135deg, #6c757d, #545b62);
+}
+
+.github-btn:not(:disabled):hover {
+  box-shadow: 0 4px 12px rgba(108, 117, 125, 0.4);
+}
+
+.about-btn {
+  background: linear-gradient(135deg, #17a2b8, #138496);
+}
+
+.about-btn:not(:disabled):hover {
+  box-shadow: 0 4px 12px rgba(23, 162, 184, 0.4);
+}
+
+.btn-text {
+  white-space: nowrap;
+  font-size: 14px;
+}
+
+/* 版本号样式 - 统一容器样式 */
+.version-info {
+  background: #2d2d2d;
+  border-radius: 8px;
+  border: 1px solid #404040;
+  color: #999;
+  font-size: 12px;
+  text-align: center;
+  margin-top: 20px;
+  padding: 15px 20px;
+}
+
 /* 响应式设计 */
 @media (max-width: 768px) {
   .setting-container {
@@ -1745,6 +2722,16 @@ onMounted(() => {
   .no-char-portrait {
     width: 50px;
     height: 60px;
+  }
+
+  /* 移动端系统功能按钮调整 */
+  .function-buttons {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .function-btn {
+    padding: 14px 16px;
   }
 }
 </style>
