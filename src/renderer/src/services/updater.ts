@@ -166,10 +166,37 @@ class UpdaterService {
   /**
    * 获取当前版本信息
    */
-  getCurrentVersionInfo(): { version: string; buildTime?: string } {
+  async getCurrentVersionInfo(): Promise<{ version: string; buildTime?: string }> {
+    let buildTime = import.meta.env.VITE_BUILD_TIME || undefined
+    
+    // 尝试从 GitHub 获取当前版本的发布时间
+    try {
+      // 先获取所有 releases
+      const response = await fetch('https://api.github.com/repos/Lrysc/prts/releases')
+      if (response.ok) {
+        const releases = await response.json()
+        
+        // 查找匹配当前版本的 release
+        const currentRelease = releases.find((release: any) => {
+          // 移除 v 前缀进行比较
+          const releaseVersion = release.tag_name.replace(/^v/, '')
+          const currentVersion = this.currentVersion.replace(/^v/, '')
+          return releaseVersion === currentVersion
+        })
+        
+        if (currentRelease) {
+          buildTime = new Date(currentRelease.published_at).toLocaleString('zh-CN')
+        } else {
+          console.warn(`未找到版本 ${this.currentVersion} 对应的 GitHub release`)
+        }
+      }
+    } catch (error) {
+      console.warn('获取 GitHub 发布时间失败:', error)
+    }
+    
     return {
       version: this.currentVersion,
-      buildTime: process.env.VITE_BUILD_TIME || undefined
+      buildTime
     }
   }
 
