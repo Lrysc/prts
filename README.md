@@ -9,7 +9,8 @@
 ## 参考/使用项目
 [Skland_API](https://github.com/ProbiusOfficial/Skland_API)  API  \
 [Arkscreen](https://github.com/blueskybone/ArkScreen)  项目解析部分数据  \
-[ArknightsGameResource](https://github.com/yuanyan3060/ArknightsGameResource) 干员图片获取
+[ArknightsGameResource](https://github.com/yuanyan3060/ArknightsGameResource) 干员图片获取  \
+[arknights_icons](https://github.com/Yue-plus/arknights_icons) 部分图标获取
 
 
 # ToDoList

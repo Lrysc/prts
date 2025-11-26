@@ -943,7 +943,7 @@ const renderMarkdown = (text: string): string => {
   
   // 清理空的段落标签
   html = html.replace(/<p class="md-p"><\/p>/g, '')
-  html = html.replace(/<p class="md-p">(.*?)<\/p>/g, (match, p1) => {
+  html = html.replace(/<p class="md-p">(.*?)<\/p>/g, (_, p1) => {
     if (p1.trim() === '') return ''
     if (p1.includes('<h') || p1.includes('<ul') || p1.includes('<ol') || p1.includes('<pre')) {
       return p1

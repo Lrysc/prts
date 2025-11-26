@@ -1,5 +1,5 @@
 import { logger } from './logger'
-import { showSuccess, showError, showWarning, showInfo } from './toastService'
+import { showSuccess, showError, showInfo } from './toastService'
 import packageJson from '../../../../package.json'
 
 interface GitHubRelease {
@@ -136,15 +136,13 @@ class UpdaterService {
    * 获取下载链接
    * @param platform 平台类型
    */
-  getDownloadUrl(platform: 'win32' | 'darwin' | 'linux' = 'win32'): string | null {
+  getDownloadUrl(_platform: 'win32' | 'darwin' | 'linux' = 'win32'): string | null {
     // 这里可以根据实际的发布文件名模式进行调整
-    const filePatterns = {
-      win32: ['.exe', '.zip'],
-      darwin: ['.dmg', '.zip'],
-      linux: ['.AppImage', '.deb', '.rpm', '.tar.gz']
-    }
-
-    const patterns = filePatterns[platform]
+    // const filePatterns = {
+    //   win32: ['.exe', '.zip'],
+    //   darwin: ['.dmg', '.zip'],
+    //   linux: ['.AppImage', '.deb', '.rpm', '.tar.gz']
+    // }
     
     // 返回 GitHub Releases 页面，让用户手动选择下载
     return this.GITHUB_RELEASES_URL

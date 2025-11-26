@@ -142,12 +142,16 @@ export const getGachaRecords = async (
 };
 
 // ============================================================================
+// 导入API模块
+// ============================================================================
+import { AuthAPI } from './api';
+
+// ============================================================================
 // 简化的抽卡API接口（修正版）
 // ============================================================================
 
 export const SimpleGachaAPI = {
   getHypergryphTokenByPhonePassword: async (phone: string, password: string) => {
-    const { AuthAPI } = await import('./api');
     return await AuthAPI.loginByPassword(phone, password);
   },
 
@@ -159,7 +163,7 @@ export const SimpleGachaAPI = {
     };
   },
 
-  getGachaCategories: async (userInfo: any, token: string, uid: string) => {
+  getGachaCategories: async (userInfo: any, _token: string, uid: string) => {
     // 使用userInfo.content作为accountToken
     const accountToken = userInfo?.content;
     if (!accountToken) {
