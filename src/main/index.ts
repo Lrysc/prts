@@ -347,10 +347,10 @@ app.whenReady().then(() => {
       const headers = Object.fromEntries(response.headers.entries())
       if (url.includes('/user/api/role/login') && headers['set-cookie']) {
         console.log('检测到角色登录接口的Set-Cookie头:', headers['set-cookie'])
-        
+
         const cookies = Array.isArray(headers['set-cookie']) ? headers['set-cookie'] : [headers['set-cookie']]
         const akUserCenterCookie = cookies.find((cookie: string) => cookie.includes('ak-user-center='))
-        
+
         if (akUserCenterCookie) {
           const cookieValue = akUserCenterCookie.match(/ak-user-center=([^;]+)/)?.[1]
           if (cookieValue) {
@@ -365,8 +365,8 @@ app.whenReady().then(() => {
         }
       }
 
-      return { 
-        success: true, 
+      return {
+        success: true,
         data,
         headers
       }

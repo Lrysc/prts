@@ -225,17 +225,66 @@ export const roleLogin = async (token: string): Promise<string> => {
 
   const data = await handleApiResponse(response, '角色登录');
 
-  // 主要方案：从响应体中获取cookie（IPC代理应该已经将cookie添加到响应体中）
+  // 在生产环境中，cookie应该通过IPC代理的特殊方式传递
+  if (!isDev) {
+    // 检查是否有通过IPC代理传递的cookie
+    const apiResult = await (window as any).api.apiRequest(url, {
+      method: 'POST',
+      headers: getCommonHeaders(),
+      body: JSON.stringify({
+        token,
+        source_from: '',
+        share_type: '',
+        share_by: ''
+      })
+    });
+
+    if (apiResult.cookie) {
+      console.log('从IPC代理获取到cookie:', apiResult.cookie.substring(0, 50) + '...');
+      return apiResult.cookie;
+    }
+  }
+
+  // 优先从响应体中获取cookie（通过代理处理）
+  console.log('检查响应体中的cookie:', {
+    hasData: !!data.data,
+    hasCookie: !!(data.data && data.data.cookie),
+    dataKeys: data.data ? Object.keys(data.data) : []
+  });
+  
   if (data.data && data.data.cookie) {
     console.log('从响应体获取到cookie:', data.data.cookie.substring(0, 50) + '...');
     return data.data.cookie;
   }
 
-  // 备用方案：尝试从响应头获取
-  const setCookieHeader = response.headers.get('set-cookie');
+  // 备用方案：尝试从响应头获取（可能由于CORS限制而失败）
+  let setCookieHeader: string | null = null;
+  
+  console.log('检查响应头中的cookie:', {
+    isDev: isDev,
+    allHeaders: Object.fromEntries(response.headers.entries()),
+    hasSetCookie: response.headers.has('set-cookie'),
+    hasSetCookieCaps: response.headers.has('Set-Cookie')
+  });
+
+  // 直接从响应头获取set-cookie
+  setCookieHeader = response.headers.get('set-cookie');
+  
+  // 如果没有找到，尝试其他可能的大小写组合
+  if (!setCookieHeader) {
+    setCookieHeader = response.headers.get('Set-Cookie');
+  }
+
   if (setCookieHeader) {
     console.log('从响应头获取到set-cookie:', setCookieHeader);
-    const match = setCookieHeader.match(/ak-user-center=([^;]+)/);
+
+    // 处理可能为数组的set-cookie
+    let cookieString = setCookieHeader;
+    if (Array.isArray(setCookieHeader)) {
+      cookieString = setCookieHeader.join('; ');
+    }
+
+    const match = cookieString.match(/ak-user-center=([^;]+)/);
     if (match) {
       const cookie = decodeURIComponent(match[1]);
       console.log('成功提取到ak-user-center cookie值:', cookie.substring(0, 50) + '...');
@@ -243,10 +292,9 @@ export const roleLogin = async (token: string): Promise<string> => {
     }
   }
 
-  // 调试信息
-  console.error('无法获取认证cookie，响应详情:', {
+  // 如果以上都失败，尝试从makeRequest的返回结果中获取
+  console.error('所有cookie提取方式都失败了，响应详情:', {
     status: response.status,
-    statusText: response.statusText,
     headers: Object.fromEntries(response.headers.entries()),
     data: data
   });

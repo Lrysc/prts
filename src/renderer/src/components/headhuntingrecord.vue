@@ -21,7 +21,7 @@
           class="export-merged-btn" 
           title="导出合并后的导入数据"
         >
-          导出合并
+          合并导出
         </button>
       </div>
     </div>
@@ -160,10 +160,23 @@
     <!-- 已导入的寻访记录 -->
     <div v-if="importedData.length > 0" class="imported-records">
       <div class="imported-header">
-        <h3>已导入的寻访记录</h3>
-        <button @click="clearImportedData" class="clear-btn" title="清除导入数据">
-          清除数据
-        </button>
+        <div>
+          <h3>已导入的寻访记录</h3>
+          <p class="imported-summary">
+            共 {{ importedData.length }} 个卡池，{{ getTotalImportedRecords() }} 条记录
+          </p>
+        </div>
+        <div class="imported-actions">
+          <button @click="expandAllImportedCategories" class="expand-btn" title="展开所有">
+            全部展开
+          </button>
+          <button @click="collapseAllImportedCategories" class="expand-btn" title="收起所有">
+            全部收起
+          </button>
+          <button @click="clearImportedData" class="clear-btn" title="清除导入数据">
+            清除数据
+          </button>
+        </div>
       </div>
       
       <div class="imported-categories">
@@ -174,6 +187,7 @@
         >
           <h4 @click="toggleImportedCategory(index)">
             {{ category.categoryName }}
+            <span class="category-info">({{ category.records.length }} 条记录)</span>
             <span class="toggle-icon">{{ expandedImportedCategories[index] ? '▼' : '▶' }}</span>
           </h4>
           
@@ -206,11 +220,21 @@
         </div>
       </div>
     </div>
+
+    <!-- 回到顶部按钮 -->
+    <button 
+      @click="scrollToTop" 
+      class="back-to-top-btn" 
+      title="回到顶部"
+      v-show="showBackToTop"
+    >
+      ↑
+    </button>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useAuthStore } from '@stores/auth';
 import { 
   getOAuth2Grant, 
@@ -256,6 +280,9 @@ const importedData = ref<Array<{
   records: GachaRecord[];
 }>>([]);
 const expandedImportedCategories = ref<Record<number, boolean>>({});
+
+// 回到顶部按钮状态
+const showBackToTop = ref(false);
 
 // 分页相关状态
 const currentPage = ref(1);
@@ -636,13 +663,40 @@ const getRarityText = (rarity: number) => {
 };
 
 const formatTime = (timestamp: string) => {
-  const date = new Date(parseInt(timestamp));
+  // 处理不同格式的时间戳
+  let date: Date;
+  
+  // 如果是字符串形式的毫秒时间戳
+  if (/^\d{13}$/.test(timestamp)) {
+    date = new Date(parseInt(timestamp));
+  }
+  // 如果是字符串形式的秒时间戳
+  else if (/^\d{10}$/.test(timestamp)) {
+    date = new Date(parseInt(timestamp) * 1000);
+  }
+  // 如果已经是数字
+  else if (typeof timestamp === 'number') {
+    // 判断是秒还是毫秒
+    date = timestamp > 1000000000000 ? new Date(timestamp) : new Date(timestamp * 1000);
+  }
+  // 默认情况，尝试直接解析
+  else {
+    date = new Date(timestamp);
+  }
+  
+  // 检查日期是否有效
+  if (isNaN(date.getTime())) {
+    console.warn('无效的时间戳:', timestamp);
+    return '时间格式错误';
+  }
+  
   return date.toLocaleString('zh-CN', {
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
     hour: '2-digit',
-    minute: '2-digit'
+    minute: '2-digit',
+    second: '2-digit'
   });
 };
 
@@ -1095,6 +1149,29 @@ const toggleImportedCategory = (index: number) => {
   expandedImportedCategories.value[index] = !expandedImportedCategories.value[index];
 };
 
+// 展开所有导入卡池
+const expandAllImportedCategories = () => {
+  importedData.value.forEach((_, index) => {
+    expandedImportedCategories.value[index] = true;
+  });
+  logger.debug('用户展开所有导入卡池', { 
+    totalCategories: importedData.value.length 
+  });
+};
+
+// 收起所有导入卡池
+const collapseAllImportedCategories = () => {
+  expandedImportedCategories.value = {};
+  logger.debug('用户收起所有导入卡池', { 
+    totalCategories: importedData.value.length 
+  });
+};
+
+// 获取导入记录总数
+const getTotalImportedRecords = () => {
+  return importedData.value.reduce((sum, category) => sum + category.records.length, 0);
+};
+
 // 清除导入数据
 const clearImportedData = () => {
   const previousDataCount = importedData.value.length;
@@ -1251,6 +1328,20 @@ const loadAllPoolNames = async (
   });
 };
 
+// 回到顶部功能
+const scrollToTop = () => {
+  window.scrollTo({
+    top: 0,
+    behavior: 'smooth'
+  });
+  logger.debug('用户点击回到顶部按钮');
+};
+
+// 监听滚动事件
+const handleScroll = () => {
+  showBackToTop.value = window.scrollY > 300;
+};
+
 // 生命周期
 onMounted(() => {
   logger.gacha('寻访记录组件已挂载', {
@@ -1264,6 +1355,14 @@ onMounted(() => {
   } else {
     logger.gacha('用户未登录，跳过寻访记录数据加载');
   }
+
+  // 添加滚动监听
+  window.addEventListener('scroll', handleScroll);
+  
+  // 组件卸载时移除监听
+  onUnmounted(() => {
+    window.removeEventListener('scroll', handleScroll);
+  });
 });
 </script>
 
@@ -1851,6 +1950,75 @@ onMounted(() => {
 
 .imported-records-table .gacha-table {
   margin: 0;
+}
+
+/* 回到顶部按钮样式 */
+.back-to-top-btn {
+  position: fixed;
+  bottom: 30px;
+  right: 30px;
+  width: 50px;
+  height: 50px;
+  border: 1px solid #404040;
+  border-radius: 50%;
+  background: #3a3a3a;
+  color: #ccc;
+  font-size: 20px;
+  font-weight: bold;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s;
+  z-index: 1000;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.back-to-top-btn:hover {
+  background: #4a4a4a;
+  color: #646cff;
+  border-color: #646cff;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(100, 108, 255, 0.2);
+}
+
+/* 导入记录增强样式 */
+.imported-summary {
+  margin: 4px 0 0 0;
+  color: #999;
+  font-size: 14px;
+  font-weight: normal;
+}
+
+.imported-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.expand-btn {
+  padding: 6px 12px;
+  border: 1px solid #404040;
+  border-radius: 4px;
+  background: #3a3a3a;
+  color: #ccc;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.expand-btn:hover {
+  background: #4a4a4a;
+  color: #ffffff;
+  border-color: #646cff;
+}
+
+.category-info {
+  font-size: 12px;
+  color: #999;
+  font-weight: normal;
+  margin-left: 8px;
 }
 
 /* 响应式设计 */
