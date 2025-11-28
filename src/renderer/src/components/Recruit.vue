@@ -295,7 +295,7 @@ onMounted(() => {
     </div>
 
     <div v-if="loadError" class="error-tip">
-      <span class="error-icon">❌</span>
+      <span class="error-icon">✖</span>
       {{ loadError }}
       <button @click="reloadData" class="retry-btn">重试</button>
     </div>
@@ -310,7 +310,7 @@ onMounted(() => {
       </div>
 
       <div class="important-tip">
-        <span class="warning-icon">⚠️</span>
+        <span class="warning-icon">!</span>
         高资及资深干员切记拉满九小时！！
       </div>
 

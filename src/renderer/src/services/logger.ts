@@ -471,6 +471,431 @@ class LoggerService {
   getConfig(): LoggerConfig {
     return { ...this.config };
   }
+
+  /**
+   * 寻访记录组件专用日志
+   * 用于记录寻访记录相关的操作和状态
+   * @param message - 日志消息
+   * @param context - 上下文信息
+   */
+  gacha(message: string, context?: any): void {
+    this.addLog(LogLevel.INFO, `[寻访记录] ${message}`, context);
+  }
+
+  /**
+   * 寻访记录调试日志
+   * @param message - 调试消息
+   * @param context - 调试上下文
+   */
+  gachaDebug(message: string, context?: any): void {
+    this.addLog(LogLevel.DEBUG, `[寻访记录] ${message}`, context);
+  }
+
+  /**
+   * 寻访记录警告日志
+   * @param message - 警告消息
+   * @param context - 警告上下文
+   */
+  gachaWarn(message: string, context?: any): void {
+    this.addLog(LogLevel.WARN, `[寻访记录] ${message}`, context);
+  }
+
+  /**
+   * 寻访记录错误日志
+   * @param message - 错误消息
+   * @param context - 错误上下文
+   */
+  gachaError(message: string, context?: any): void {
+    this.addLog(LogLevel.ERROR, `[寻访记录] ${message}`, context);
+  }
+
+  /**
+   * 寻访记录性能监控
+   * @param message - 操作描述
+   * @param operation - 要监控的操作函数
+   * @returns 操作结果
+   */
+  gachaPerformance<T>(message: string, operation: () => T): T {
+    const start = performance.now();
+    try {
+      const result = operation();
+      const duration = performance.now() - start;
+      this.gachaDebug(`${message} - 完成, 耗时: ${duration.toFixed(2)}ms`, {
+        operation: message,
+        duration: duration,
+        timestamp: new Date().toISOString()
+      });
+      return result;
+    } catch (error) {
+      const duration = performance.now() - start;
+      this.gachaError(`${message} - 失败, 耗时: ${duration.toFixed(2)}ms`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * 寻访记录异步性能监控
+   * @param message - 操作描述
+   * @param operation - 要监控的异步操作函数
+   * @returns 操作结果
+   */
+  async gachaPerformanceAsync<T>(message: string, operation: () => Promise<T>): Promise<T> {
+    const start = performance.now();
+    try {
+      const result = await operation();
+      const duration = performance.now() - start;
+      this.gachaDebug(`${message} - 完成, 耗时: ${duration.toFixed(2)}ms`, {
+        operation: message,
+        duration: duration,
+        timestamp: new Date().toISOString()
+      });
+      return result;
+    } catch (error) {
+      const duration = performance.now() - start;
+      this.gachaError(`${message} - 失败, 耗时: ${duration.toFixed(2)}ms`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * 参数传递跟踪日志
+   * 用于详细记录函数参数的传递情况，直观显示哪些参数成功传递，哪些失败
+   * @param functionName - 函数名称
+   * @param params - 参数对象，包含参数名和值的映射
+   * @param operation - 要执行的操作函数
+   * @returns 操作结果
+   */
+  async trackParams<T>(functionName: string, params: Record<string, any>, operation: (validParams: Record<string, any>) => Promise<T>): Promise<T> {
+    const start = performance.now();
+    
+    // 分析参数状态
+    const paramStatus: Record<string, { value: any; isValid: boolean; type: string; isEmpty?: boolean }> = {};
+    
+    for (const [key, value] of Object.entries(params)) {
+      const isValid = value !== undefined && value !== null && value !== '';
+      const isEmpty = value === '' || (Array.isArray(value) && value.length === 0);
+      const type = Array.isArray(value) ? 'array' : typeof value;
+      
+      paramStatus[key] = {
+        value: isValid ? (type === 'object' ? '[Object]' : type === 'array' ? `[Array(${value.length})]` : String(value)) : value,
+        isValid,
+        type,
+        isEmpty
+      };
+    }
+
+    // 记录参数检查结果
+    const validParams = Object.fromEntries(
+      Object.entries(paramStatus).filter(([_, status]) => status.isValid && !status.isEmpty)
+    );
+    
+    const invalidParams = Object.entries(paramStatus).filter(([_, status]) => !status.isValid || status.isEmpty);
+    
+    // 生成参数状态报告
+    const paramReport = {
+      functionName,
+      totalParams: Object.keys(params).length,
+      validParams: Object.keys(validParams).length,
+      invalidParams: invalidParams.length,
+      paramDetails: paramStatus,
+      validParamNames: Object.keys(validParams),
+      invalidParamDetails: Object.fromEntries(invalidParams)
+    };
+
+    this.info(`参数检查 [${functionName}]`, paramReport);
+
+    // 如果所有必需参数都无效，提前警告
+    if (Object.keys(validParams).length === 0) {
+      this.warn(`[${functionName}] 所有参数都无效或为空`, {
+        functionName,
+        params: paramStatus,
+        suggestion: '请检查参数传递是否正确'
+      });
+    }
+
+    try {
+      const result = await operation(validParams);
+      const duration = performance.now() - start;
+      
+      // 成功时记录详细的参数使用情况
+      this.info(`[${functionName}] 参数传递成功`, {
+        functionName,
+        duration: `${duration.toFixed(2)}ms`,
+        usedParams: Object.keys(validParams),
+        success: true,
+        result: typeof result === 'object' ? '[Object]' : String(result)
+      });
+
+      return result;
+    } catch (error) {
+      const duration = performance.now() - start;
+      
+      // 失败时提供更详细的错误信息和参数状态
+      this.error(`[${functionName}] 参数传递失败`, {
+        functionName,
+        duration: `${duration.toFixed(2)}ms`,
+        error: error instanceof Error ? {
+          message: error.message,
+          name: error.name,
+          stack: error.stack
+        } : String(error),
+        paramStatus,
+        validParams: Object.keys(validParams),
+        invalidParams: Object.keys(paramStatus).filter(key => !paramStatus[key].isValid || paramStatus[key].isEmpty),
+        troubleshooting: {
+          checkNetwork: '检查网络连接是否正常',
+          checkAuth: '确认认证信息是否有效',
+          checkParams: '验证参数格式和内容是否正确',
+          checkEndpoint: '确认API端点是否可访问'
+        }
+      });
+      
+      throw error;
+    }
+  }
+
+  /**
+   * 同步版本的参数传递跟踪
+   * @param functionName - 函数名称
+   * @param params - 参数对象
+   * @param operation - 要执行的操作函数
+   * @returns 操作结果
+   */
+  trackParamsSync<T>(functionName: string, params: Record<string, any>, operation: (validParams: Record<string, any>) => T): T {
+    const start = performance.now();
+    
+    // 分析参数状态
+    const paramStatus: Record<string, { value: any; isValid: boolean; type: string; isEmpty?: boolean }> = {};
+    
+    for (const [key, value] of Object.entries(params)) {
+      const isValid = value !== undefined && value !== null && value !== '';
+      const isEmpty = value === '' || (Array.isArray(value) && value.length === 0);
+      const type = Array.isArray(value) ? 'array' : typeof value;
+      
+      paramStatus[key] = {
+        value: isValid ? (type === 'object' ? '[Object]' : type === 'array' ? `[Array(${value.length})]` : String(value)) : value,
+        isValid,
+        type,
+        isEmpty
+      };
+    }
+
+    // 记录参数检查结果
+    const validParams = Object.fromEntries(
+      Object.entries(paramStatus).filter(([_, status]) => status.isValid && !status.isEmpty)
+    );
+    
+    const invalidParams = Object.entries(paramStatus).filter(([_, status]) => !status.isValid || status.isEmpty);
+    
+    // 生成参数状态报告
+    const paramReport = {
+      functionName,
+      totalParams: Object.keys(params).length,
+      validParams: Object.keys(validParams).length,
+      invalidParams: invalidParams.length,
+      paramDetails: paramStatus,
+      validParamNames: Object.keys(validParams),
+      invalidParamDetails: Object.fromEntries(invalidParams)
+    };
+
+    this.info(`参数检查 [${functionName}]`, paramReport);
+
+    // 如果所有必需参数都无效，提前警告
+    if (Object.keys(validParams).length === 0) {
+      this.warn(`[${functionName}] 所有参数都无效或为空`, {
+        functionName,
+        params: paramStatus,
+        suggestion: '请检查参数传递是否正确'
+      });
+    }
+
+    try {
+      const result = operation(validParams);
+      const duration = performance.now() - start;
+      
+      // 成功时记录详细的参数使用情况
+      this.info(`[${functionName}] 参数传递成功`, {
+        functionName,
+        duration: `${duration.toFixed(2)}ms`,
+        usedParams: Object.keys(validParams),
+        success: true,
+        result: typeof result === 'object' ? '[Object]' : String(result)
+      });
+
+      return result;
+    } catch (error) {
+      const duration = performance.now() - start;
+      
+      // 失败时提供更详细的错误信息和参数状态
+      this.error(`[${functionName}] 参数传递失败`, {
+        functionName,
+        duration: `${duration.toFixed(2)}ms`,
+        error: error instanceof Error ? {
+          message: error.message,
+          name: error.name,
+          stack: error.stack
+        } : String(error),
+        paramStatus,
+        validParams: Object.keys(validParams),
+        invalidParams: Object.keys(paramStatus).filter(key => !paramStatus[key].isValid || paramStatus[key].isEmpty),
+        troubleshooting: {
+          checkNetwork: '检查网络连接是否正常',
+          checkAuth: '确认认证信息是否有效',
+          checkParams: '验证参数格式和内容是否正确',
+          checkEndpoint: '确认API端点是否可访问'
+        }
+      });
+      
+      throw error;
+    }
+  }
+
+  /**
+   * API调用专用参数跟踪
+   * 专门用于API调用的参数跟踪，包含网络相关信息
+   * @param apiName - API名称
+   * @param url - API地址
+   * @param params - 请求参数
+   * @param operation - API调用函数
+   * @returns API响应结果
+   */
+  async trackApiParams<T>(apiName: string, url: string, params: Record<string, any>, operation: (validParams: Record<string, any>) => Promise<T>): Promise<T> {
+    const start = performance.now();
+    
+    // 分析参数状态
+    const paramStatus: Record<string, { value: any; isValid: boolean; type: string; isEmpty?: boolean }> = {};
+    
+    for (const [key, value] of Object.entries(params)) {
+      const isValid = value !== undefined && value !== null && value !== '';
+      const isEmpty = value === '' || (Array.isArray(value) && value.length === 0);
+      const type = Array.isArray(value) ? 'array' : typeof value;
+      
+      paramStatus[key] = {
+        value: isValid ? (type === 'object' ? '[Object]' : type === 'array' ? `[Array(${value.length})]` : String(value)) : value,
+        isValid,
+        type,
+        isEmpty
+      };
+    }
+
+    // 记录参数检查结果
+    const validParams = Object.fromEntries(
+      Object.entries(paramStatus).filter(([_, status]) => status.isValid && !status.isEmpty)
+    );
+    
+    const invalidParams = Object.entries(paramStatus).filter(([_, status]) => !status.isValid || status.isEmpty);
+
+    // API专用参数报告
+    const apiParamReport = {
+      apiName,
+      url,
+      method: params.method || 'GET',
+      totalParams: Object.keys(params).length,
+      validParams: Object.keys(validParams).length,
+      invalidParams: invalidParams.length,
+      paramDetails: paramStatus,
+      validParamNames: Object.keys(validParams),
+      invalidParamDetails: Object.fromEntries(invalidParams),
+      headers: params.headers ? '[Headers]' : 'No Headers',
+      hasBody: !!params.body
+    };
+
+    this.info(`API参数检查 [${apiName}]`, apiParamReport);
+
+    // 如果关键参数缺失，特别警告
+    const criticalParams = ['url', 'method', 'headers'];
+    const missingCritical = criticalParams.filter(param => !paramStatus[param]?.isValid);
+    if (missingCritical.length > 0) {
+      this.warn(`[${apiName}] 缺少关键参数`, {
+        apiName,
+        missingParams: missingCritical,
+        impact: '可能导致API调用失败',
+        recommendation: '请确保所有必需参数都已正确设置'
+      });
+    }
+
+    try {
+      const result = await operation(validParams);
+      const duration = performance.now() - start;
+      
+      // API成功响应时的详细日志
+      this.info(`[${apiName}] API调用成功`, {
+        apiName,
+        url,
+        duration: `${duration.toFixed(2)}ms`,
+        usedParams: Object.keys(validParams),
+        responseStatus: 'Success',
+        responseType: typeof result === 'object' ? '[Object]' : String(result)
+      });
+
+      return result;
+    } catch (error) {
+      const duration = performance.now() - start;
+      
+      // API失败时的详细诊断信息
+      this.error(`[${apiName}] API调用失败`, {
+        apiName,
+        url,
+        duration: `${duration.toFixed(2)}ms`,
+        error: error instanceof Error ? {
+          message: error.message,
+          name: error.name,
+          stack: error.stack
+        } : String(error),
+        paramStatus,
+        validParams: Object.keys(validParams),
+        invalidParams: Object.keys(paramStatus).filter(key => !paramStatus[key].isValid || paramStatus[key].isEmpty),
+        networkDiagnostics: {
+          checkConnection: '网络连接是否正常',
+          checkEndpoint: `API端点 ${url} 是否可访问`,
+          checkAuth: '认证信息是否有效',
+          checkCORS: '是否存在CORS问题',
+          checkTimeout: '是否超时',
+          checkRateLimit: '是否触发频率限制'
+        },
+        paramFixSuggestions: this.generateParamFixSuggestions(paramStatus)
+      });
+      
+      throw error;
+    }
+  }
+
+  /**
+   * 生成参数修复建议
+   * @param paramStatus - 参数状态对象
+   * @returns 修复建议数组
+   */
+  private generateParamFixSuggestions(paramStatus: Record<string, any>): string[] {
+    const suggestions: string[] = [];
+    
+    for (const [paramName, status] of Object.entries(paramStatus)) {
+      if (!status.isValid) {
+        switch (paramName) {
+          case 'cred':
+            suggestions.push('cred参数缺失：请确保已正确获取森空岛凭证');
+            break;
+          case 'token':
+            suggestions.push('token参数缺失：请检查登录状态和令牌有效性');
+            break;
+          case 'uid':
+            suggestions.push('uid参数缺失：请确保已选择正确的游戏角色');
+            break;
+          case 'url':
+            suggestions.push('url参数缺失：请检查API地址配置');
+            break;
+          case 'headers':
+            suggestions.push('headers参数缺失：请设置正确的请求头');
+            break;
+          default:
+            suggestions.push(`${paramName}参数无效：请检查参数值是否正确`);
+        }
+      } else if (status.isEmpty) {
+        suggestions.push(`${paramName}参数为空：请提供有效的参数值`);
+      }
+    }
+    
+    return suggestions;
+  }
 }
 
 // 创建全局日志实例

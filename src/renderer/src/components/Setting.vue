@@ -284,7 +284,7 @@
         @click.stop
       >
         <div class="custom-modal-body">
-          <div class="custom-modal-icon">⚠️</div>
+          <div class="custom-modal-icon">!</div>
           <h3 class="custom-modal-title">清除日志确认</h3>
           <p class="custom-modal-message">
             确定要清除所有日志吗？<br>
@@ -439,7 +439,7 @@ const copyToClipboard = async (text: string, itemName: string = '内容'): Promi
   if (navigator.clipboard && window.isSecureContext) {
     try {
       await navigator.clipboard.writeText(text)
-      console.log(`✅ 使用Clipboard API复制${itemName}成功`)
+      console.log(`使用Clipboard API复制${itemName}成功`)
       return true
     } catch (error) {
       console.warn(`Clipboard API失败:`, error)
@@ -484,10 +484,10 @@ const copyToClipboard = async (text: string, itemName: string = '内容'): Promi
     document.body.removeChild(textArea)
 
     if (successful) {
-      console.log(`✅ 使用execCommand复制${itemName}成功`)
+      console.log(`使用execCommand复制${itemName}成功`)
       return true
     } else {
-      console.warn(`❌ 使用execCommand复制${itemName}失败`)
+      console.warn(`使用execCommand复制${itemName}失败`)
       return false
     }
   } catch (error) {
@@ -674,7 +674,7 @@ const exportLogs = () => {
   try {
     const logText = logger.exportLogs()
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
-    downloadFile(logText, `PRTS-System-logs-${timestamp}.txt`, 'text/plain')
+    downloadFile(logText, `ZOOT-System-logs-${timestamp}.txt`, 'text/plain')
     showSuccess('日志导出成功')
     logger.info('用户导出了日志文件', { logCount: logCount.value })
   } catch (error) {
@@ -691,7 +691,7 @@ const exportLogsAsJson = () => {
   try {
     const jsonData = logger.exportAsJson()
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
-    downloadFile(jsonData, `PRTS-System-logs-${timestamp}.json`, 'application/json')
+    downloadFile(jsonData, `ZOOT-System-logs-${timestamp}.json`, 'application/json')
     showSuccess('JSON日志导出成功')
     logger.info('用户导出了JSON格式日志', { logCount: logCount.value })
   } catch (error) {
@@ -857,7 +857,7 @@ const showAboutDialogFunc = async () => {
   const versionInfo = await updaterService.getCurrentVersionInfo()
 
   aboutContent.value = `
-# PRTS 系统助手
+# ZOOT备用系统
 
 ## 版本信息
 - **当前版本**：${versionInfo.version}

@@ -217,6 +217,7 @@ import {
   type GachaHistoryResponse
 } from '@services/Gacha';
 import { showToast } from '@services/toastService';
+import { logger } from '@services/logger';
 
 // 定义组件事件
 const emit = defineEmits<{
@@ -265,8 +266,18 @@ const currentPageRecords = computed(() => {
 
 // 方法
 const refreshGachaData = async () => {
+  logger.gacha('开始刷新寻访记录数据', {
+    hasMainUid: !!authStore.mainUid,
+    uid: authStore.mainUid?.substring(0, 8) + '...'
+  });
+  
   if (!authStore.mainUid) {
-    error.value = '未找到游戏UID';
+    const errorMsg = '未找到游戏UID';
+    logger.gachaError('刷新寻访记录失败: 未找到游戏UID', {
+      hasMainUid: !!authStore.mainUid,
+      isLogin: authStore.isLogin
+    });
+    error.value = errorMsg;
     return;
   }
 
@@ -274,6 +285,7 @@ const refreshGachaData = async () => {
   error.value = null;
   
   try {
+    logger.gachaDebug('重置寻访记录组件状态');
     // 重置状态
     categories.value = [];
     selectedCategory.value = null;
@@ -283,58 +295,135 @@ const refreshGachaData = async () => {
     lastRecordTs.value = null;
 
     // 执行完整的抽卡API流程
-    await executeGachaFlow();
+    await logger.gachaPerformanceAsync('执行完整寻访记录API流程', async () => {
+      await executeGachaFlow();
+    });
+    
+    logger.gacha('寻访记录数据刷新成功', {
+      categoriesCount: categories.value.length,
+      firstCategory: categories.value[0]?.name
+    });
   } catch (err: unknown) {
+    const errorMessage = err instanceof Error ? err.message : '获取抽卡数据失败';
+    logger.gachaError('获取抽卡数据失败', {
+      error: errorMessage,
+      stack: err instanceof Error ? err.stack : undefined,
+      uid: authStore.mainUid?.substring(0, 8) + '...'
+    });
     console.error('获取抽卡数据失败:', err);
-    error.value = err instanceof Error ? err.message : '获取抽卡数据失败';
+    error.value = errorMessage;
   } finally {
     loading.value = false;
+    logger.gachaDebug('寻访记录数据加载状态已更新', { loading: false });
   }
 };
 
 const executeGachaFlow = async () => {
+  logger.gacha('开始执行寻访记录认证流程', {
+    hasHgToken: !!authStore.hgToken,
+    hasMainUid: !!authStore.mainUid,
+    uid: authStore.mainUid?.substring(0, 8) + '...'
+  });
+  
   if (!authStore.hgToken || !authStore.mainUid) {
-    throw new Error('缺少必要的认证信息');
+    const errorMsg = '缺少必要的认证信息';
+    logger.gachaError('寻访记录认证失败', {
+      hasHgToken: !!authStore.hgToken,
+      hasMainUid: !!authStore.mainUid,
+      isLogin: authStore.isLogin
+    });
+    throw new Error(errorMsg);
   }
 
   const uid = authStore.mainUid;
 
   // 流程1-4：获取认证凭证
   loadingText.value = '正在获取认证凭证...';
+  logger.gachaDebug('开始获取认证凭证', { step: 1, uid: uid.substring(0, 8) + '...' });
   
   // 流程1：获取token（使用已有的hgToken）
   const token = authStore.hgToken;
+  logger.gachaDebug('使用现有hgToken', { 
+    tokenLength: token.length,
+    tokenPrefix: token.substring(0, 20) + '...'
+  });
   console.log('使用hgToken:', token.substring(0, 20) + '...');
   console.log('使用UID:', uid);
   
   // 流程2：OAuth2授权
-  const oauthData = await getOAuth2Grant(token);
+  logger.gachaDebug('开始OAuth2授权流程', { step: 2 });
+  const oauthData = await logger.gachaPerformanceAsync('OAuth2授权', async () => {
+    return await getOAuth2Grant(token);
+  });
+  logger.gachaDebug('OAuth2授权成功', { 
+    tokenLength: oauthData.token?.length,
+    tokenPrefix: oauthData.token?.substring(0, 20) + '...'
+  });
   
   // 流程3：获取x-role-token
-  const roleToken = await getU8TokenByUid(oauthData.token, uid);
+  logger.gachaDebug('开始获取x-role-token', { step: 3 });
+  const roleToken = await logger.gachaPerformanceAsync('获取x-role-token', async () => {
+    return await getU8TokenByUid(oauthData.token, uid);
+  });
+  logger.gachaDebug('x-role-token获取成功', { 
+    tokenLength: roleToken?.length,
+    tokenPrefix: roleToken?.substring(0, 20) + '...'
+  });
   
   // 流程4：角色登录获取cookie
-  const cookie = await roleLogin(roleToken);
+  logger.gachaDebug('开始角色登录获取cookie', { step: 4 });
+  const cookie = await logger.gachaPerformanceAsync('角色登录获取cookie', async () => {
+    return await roleLogin(roleToken);
+  });
+  logger.gachaDebug('角色登录成功', { 
+    cookieLength: cookie?.length,
+    cookiePrefix: cookie?.substring(0, 30) + '...'
+  });
   
   // 流程5：获取卡池分类
   loadingText.value = '正在获取卡池列表...';
-  const categoryList = await getGachaCategories(uid, cookie, roleToken, token);
+  logger.gachaDebug('开始获取卡池分类', { step: 5 });
+  const categoryList = await logger.gachaPerformanceAsync('获取卡池分类', async () => {
+    return await getGachaCategories(uid, cookie, roleToken, token);
+  });
   categories.value = categoryList;
+  logger.gacha('卡池分类获取成功', { 
+    categoriesCount: categoryList.length,
+    categories: categoryList.map(cat => ({ id: cat.id, name: cat.name }))
+  });
   
   // 预先获取所有卡池的poolName
   loadingText.value = '正在获取卡池详细信息...';
-  await loadAllPoolNames(uid, cookie, roleToken, token, categoryList);
+  logger.gachaDebug('开始预加载所有卡池详细信息');
+  await logger.gachaPerformanceAsync('预加载卡池详细信息', async () => {
+    await loadAllPoolNames(uid, cookie, roleToken, token, categoryList);
+  });
+  logger.gacha('卡池详细信息预加载完成', {
+    poolNamesCount: categoryPoolNames.value.size
+  });
   
   // 保存认证信息到本地存储，供后续使用
-  localStorage.setItem('gacha_auth', JSON.stringify({
+  const authData = {
     uid,
     cookie,
     roleToken,
     accountToken: token
-  }));
+  };
+  localStorage.setItem('gacha_auth', JSON.stringify(authData));
+  logger.gachaDebug('寻访记录认证信息已保存到本地存储', {
+    uid: uid.substring(0, 8) + '...',
+    hasAllTokens: !!(cookie && roleToken && token)
+  });
+  
+  logger.gacha('寻访记录认证流程执行完成');
 };
 
 const selectCategory = async (category: GachaCategory) => {
+  logger.info('选择卡池', {
+    categoryId: category.id,
+    categoryName: category.name
+  });
+  
   selectedCategory.value = category;
   currentPage.value = 1;
   lastRecordPos.value = null;
@@ -344,7 +433,21 @@ const selectCategory = async (category: GachaCategory) => {
 };
 
 const loadGachaRecords = async () => {
+  logger.info('开始加载抽卡记录', {
+    hasSelectedCategory: !!selectedCategory.value,
+    categoryId: selectedCategory.value?.id,
+    categoryName: selectedCategory.value?.name,
+    currentPage: currentPage.value,
+    pageSize: pageSize,
+    hasLastRecordPos: lastRecordPos.value !== null,
+    hasLastRecordTs: lastRecordTs.value !== null
+  });
+  
   if (!selectedCategory.value || !authStore.mainUid) {
+    logger.warn('加载抽卡记录失败: 缺少必要参数', {
+      hasSelectedCategory: !!selectedCategory.value,
+      hasMainUid: !!authStore.mainUid
+    });
     return;
   }
 
@@ -356,29 +459,60 @@ const loadGachaRecords = async () => {
     // 获取保存的认证信息
     const authData = localStorage.getItem('gacha_auth');
     if (!authData) {
-      throw new Error('认证信息已过期，请重新登录');
+      const errorMsg = '认证信息已过期，请重新登录';
+      logger.error('加载抽卡记录失败: 认证信息已过期', {
+        hasAuthData: false,
+        categoryId: selectedCategory.value.id
+      });
+      throw new Error(errorMsg);
     }
 
     const { uid, cookie, roleToken, accountToken } = JSON.parse(authData);
+    logger.debug('从本地存储获取认证信息成功', {
+      uid: uid.substring(0, 8) + '...',
+      hasCookie: !!cookie,
+      hasRoleToken: !!roleToken,
+      hasAccountToken: !!accountToken
+    });
 
     // 加载当前页数据
-    const response = await getGachaHistory(
-      uid,
-      cookie,
-      roleToken,
-      accountToken,
-      selectedCategory.value.id,
-      pageSize,
-      lastRecordPos.value || undefined,
-      lastRecordTs.value || undefined
-    );
+    const response = await logger.performanceAsync('获取抽卡记录API调用', async () => {
+      return await getGachaHistory(
+        uid,
+        cookie,
+        roleToken,
+        accountToken,
+        selectedCategory.value!.id,
+        pageSize,
+        lastRecordPos.value || undefined,
+        lastRecordTs.value || undefined
+      );
+    });
+
+    logger.debug('抽卡记录API响应', {
+      responseListLength: response.list?.length || 0,
+      hasMore: response.hasMore,
+      currentPage: currentPage.value,
+      pageSize: pageSize
+    });
 
     if (currentPage.value === 1) {
       // 第一页，直接替换数据
       gachaRecords.value = response.list;
+      logger.debug('第一页数据已替换', {
+        recordsCount: response.list.length,
+        categoryId: selectedCategory.value.id
+      });
     } else {
       // 后续页，追加数据
+      const previousCount = gachaRecords.value.length;
       gachaRecords.value.push(...response.list);
+      logger.debug('后续页数据已追加', {
+        previousCount: previousCount,
+        addedCount: response.list.length,
+        totalCount: gachaRecords.value.length,
+        currentPage: currentPage.value
+      });
     }
 
     hasNextPage.value = response.hasMore;
@@ -388,32 +522,90 @@ const loadGachaRecords = async () => {
       const lastRecord = response.list[response.list.length - 1];
       lastRecordPos.value = lastRecord.pos;
       lastRecordTs.value = lastRecord.gachaTs;
+      logger.debug('分页信息已更新', {
+        lastRecordPos: lastRecord.pos,
+        lastRecordTs: lastRecord.gachaTs,
+        hasNextPage: response.hasMore
+      });
+    } else {
+      logger.debug('当前页无数据', {
+        currentPage: currentPage.value,
+        categoryId: selectedCategory.value.id
+      });
     }
 
+    logger.info('抽卡记录加载完成', {
+      totalRecords: gachaRecords.value.length,
+      currentPage: currentPage.value,
+      hasNextPage: response.hasMore,
+      categoryId: selectedCategory.value.id
+    });
+
   } catch (err: unknown) {
+    const errorMessage = err instanceof Error ? err.message : '加载抽卡记录失败';
+    logger.error('加载抽卡记录失败', {
+      error: errorMessage,
+      stack: err instanceof Error ? err.stack : undefined,
+      categoryId: selectedCategory.value?.id,
+      currentPage: currentPage.value,
+      hasAuthData: !!localStorage.getItem('gacha_auth')
+    });
     console.error('加载抽卡记录失败:', err);
-    error.value = err instanceof Error ? err.message : '加载抽卡记录失败';
+    error.value = errorMessage;
   } finally {
     loading.value = false;
+    logger.debug('抽卡记录加载状态已更新', { loading: false });
   }
 };
 
 const prevPage = () => {
+  const oldPage = currentPage.value;
   if (currentPage.value > 1) {
     currentPage.value--;
+    logger.debug('用户点击上一页', {
+      oldPage: oldPage,
+      newPage: currentPage.value
+    });
+  } else {
+    logger.debug('无法切换到上一页', {
+      currentPage: currentPage.value,
+      isFirstPage: currentPage.value === 1
+    });
   }
 };
 
 const nextPage = async () => {
+  logger.info('用户点击下一页', {
+    hasNextPage: hasNextPage.value,
+    isLoading: loading.value,
+    currentPage: currentPage.value
+  });
+  
   if (hasNextPage.value && !loading.value) {
     currentPage.value++;
+    logger.debug('切换到下一页', { newPage: currentPage.value });
     await loadGachaRecords();
   } else if (!hasNextPage.value && !loading.value) {
+    logger.info('没有更多内容了', {
+      currentPage: currentPage.value,
+      totalRecords: gachaRecords.value.length
+    });
     showToast('没有更多内容了');
+  } else {
+    logger.debug('无法切换到下一页', {
+      hasNextPage: hasNextPage.value,
+      isLoading: loading.value
+    });
   }
 };
 
 const backToCategories = () => {
+  logger.info('返回卡池列表', {
+    hadSelectedCategory: !!selectedCategory.value,
+    previousCategoryId: selectedCategory.value?.id,
+    previousRecordsCount: gachaRecords.value.length
+  });
+  
   selectedCategory.value = null;
   gachaRecords.value = [];
   currentPage.value = 1;
@@ -453,23 +645,34 @@ const getPoolNameForCategory = (categoryId: string) => {
 
 // 导出寻访记录（原始数据格式）
 const exportGachaData = async () => {
+  logger.info('开始导出寻访记录', {
+    categoriesCount: categories.value.length,
+    hasAuthData: !!localStorage.getItem('gacha_auth')
+  });
+  
   if (categories.value.length === 0) {
+    logger.warn('没有可导出的数据', { categoriesCount: 0 });
     showToast('没有可导出的数据');
     return;
   }
 
   exportLoading.value = true;
   exportProgress.value = '准备导出...';
+  const exportStartTime = Date.now();
 
   try {
     // 获取保存的认证信息
     const authData = localStorage.getItem('gacha_auth');
     if (!authData) {
+      logger.error('导出失败: 认证信息已过期');
       showToast('认证信息已过期，无法导出数据');
       return;
     }
     
     const { uid, cookie, roleToken, accountToken } = JSON.parse(authData);
+    logger.debug('导出认证信息获取成功', {
+      uid: uid.substring(0, 8) + '...'
+    });
     
     // 创建原始数据格式的导出对象
     const rawDataExport = {
@@ -479,12 +682,19 @@ const exportGachaData = async () => {
     };
     
     const totalCategories = categories.value.length;
+    let totalExportedRecords = 0;
+    let successfulCategories = 0;
     
     for (let i = 0; i < totalCategories; i++) {
       const category = categories.value[i];
+      const categoryStartTime = Date.now();
       
       try {
         exportProgress.value = `正在导出卡池 ${i + 1}/${totalCategories}: ${category.name.replace('\\n', ' ')}`;
+        logger.debug(`开始导出卡池 ${i + 1}/${totalCategories}`, {
+          categoryId: category.id,
+          categoryName: category.name
+        });
         
         // 使用现有的 getGachaHistory 函数来获取数据
         const allApiResponses: Array<{
@@ -502,18 +712,24 @@ const exportGachaData = async () => {
           pageCount++;
           exportProgress.value = `正在导出卡池 ${i + 1}/${totalCategories}: ${category.name.replace('\\n', ' ')} (第${pageCount}页)`;
           
-          const response = await getGachaHistory(
-            uid,
-            cookie,
-            roleToken,
-            accountToken,
-            category.id,
-            10, // 使用正常的分页大小
-            currentPos,
-            currentTs
-          );
+          const response = await logger.performanceAsync(`导出卡池${category.name}第${pageCount}页`, async () => {
+            return await getGachaHistory(
+              uid,
+              cookie,
+              roleToken,
+              accountToken,
+              category.id,
+              10, // 使用正常的分页大小
+              currentPos,
+              currentTs
+            );
+          });
           
           console.log(`导出卡池 ${category.name} 的响应:`, response);
+          logger.debug(`卡池${category.name}第${pageCount}页响应`, {
+            listLength: response.list?.length || 0,
+            hasMore: response.hasMore
+          });
           
           // 创建模拟的原始API响应格式
           const mockRawData = {
@@ -537,9 +753,19 @@ const exportGachaData = async () => {
               hasMore = false;
             }
           } else {
+            logger.warn(`卡池${category.name}响应格式异常`, { response });
             hasMore = false;
           }
         }
+        
+        const categoryDuration = Date.now() - categoryStartTime;
+        logger.info(`卡池${category.name}导出完成`, {
+          categoryId: category.id,
+          categoryName: category.name,
+          pageCount: pageCount,
+          recordsCount: allRecords.length,
+          duration: categoryDuration
+        });
         
         // 保存合并后的数据，同时保留原始响应
         if (allRecords.length > 0) {
@@ -555,16 +781,44 @@ const exportGachaData = async () => {
               msg: ''
             }
           });
+          totalExportedRecords += allRecords.length;
+          successfulCategories++;
+        } else {
+          logger.warn(`卡池${category.name}无记录数据`, {
+            categoryId: category.id,
+            pageCount: pageCount
+          });
         }
         
       } catch (err: unknown) {
-        console.error(`导出卡池 ${category.name} 时发生错误:`, err);
+        const categoryDuration = Date.now() - categoryStartTime;
         const errorMessage = err instanceof Error ? err.message : '未知错误';
+        logger.error(`导出卡池${category.name}时发生错误`, {
+          error: errorMessage,
+          stack: err instanceof Error ? err.stack : undefined,
+          categoryId: category.id,
+          categoryName: category.name,
+          duration: categoryDuration
+        });
+        console.error(`导出卡池 ${category.name} 时发生错误:`, err);
         showToast(`导出卡池 ${category.name} 时发生错误: ${errorMessage}`);
       }
     }
     
+    const totalDuration = Date.now() - exportStartTime;
+    logger.info('寻访记录导出统计', {
+      totalCategories: totalCategories,
+      successfulCategories: successfulCategories,
+      totalExportedRecords: totalExportedRecords,
+      totalDuration: totalDuration,
+      categoriesWithRecords: rawDataExport.categories.length
+    });
+    
     if (rawDataExport.categories.length === 0) {
+      logger.warn('没有可导出的记录', {
+        totalCategories: totalCategories,
+        successfulCategories: successfulCategories
+      });
       showToast('没有可导出的记录');
       return;
     }
@@ -576,61 +830,146 @@ const exportGachaData = async () => {
     const dataBlob = new Blob([dataStr], { type: 'application/json' });
     const url = URL.createObjectURL(dataBlob);
     
+    const fileName = `寻访记录_原始数据_${new Date().toISOString().split('T')[0]}.json`;
+    logger.debug('创建下载文件', {
+      fileName: fileName,
+      fileSize: dataStr.length,
+      categoriesCount: rawDataExport.categories.length
+    });
+    
     const link = document.createElement('a');
     link.href = url;
-    link.download = `寻访记录_原始数据_${new Date().toISOString().split('T')[0]}.json`;
+    link.download = fileName;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
     
+    logger.info('寻访记录导出成功', {
+      fileName: fileName,
+      totalDuration: totalDuration,
+      totalCategories: successfulCategories,
+      totalRecords: totalExportedRecords
+    });
     showToast('寻访记录（原始数据格式）导出成功');
   } catch (err: unknown) {
+    const totalDuration = Date.now() - exportStartTime;
+    const errorMessage = err instanceof Error ? err.message : '未知错误';
+    logger.error('导出失败', {
+      error: errorMessage,
+      stack: err instanceof Error ? err.stack : undefined,
+      totalDuration: totalDuration
+    });
     console.error('导出失败:', err);
     showToast('导出失败，请重试');
   } finally {
     exportLoading.value = false;
     exportProgress.value = '';
+    logger.debug('导出状态已重置', { exportLoading: false });
   }
 };
 
 // 导入寻访记录
 const importGachaData = () => {
+  logger.info('开始导入寻访记录');
+  
   const input = document.createElement('input');
   input.type = 'file';
   input.accept = '.json';
   
   input.onchange = (event) => {
     const file = (event.target as HTMLInputElement).files?.[0];
-    if (!file) return;
+    if (!file) {
+      logger.warn('用户未选择文件');
+      return;
+    }
+    
+    logger.info('用户选择文件进行导入', {
+      fileName: file.name,
+      fileSize: file.size,
+      fileType: file.type
+    });
     
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
-        const data = JSON.parse(e.target?.result as string);
+        const fileContent = e.target?.result as string;
+        logger.debug('开始解析导入文件', {
+          fileName: file.name,
+          contentLength: fileContent.length
+        });
+        
+        const data = JSON.parse(fileContent);
         
         // 检查是否是新的导出格式（包含categories字段的对象）
         if (data && typeof data === 'object' && data.categories && Array.isArray(data.categories)) {
           // 新格式：提取categories数组
+          logger.debug('检测到新格式导出文件', {
+            categoriesCount: data.categories.length,
+            hasExportTime: !!data.exportTime,
+            uid: data.uid?.substring(0, 8) + '...'
+          });
+          
           importedData.value = data.categories.map((category: any) => ({
             categoryName: category.categoryInfo.name.replace('\\n', ' '),
             categoryId: category.categoryInfo.id,
             records: category.mergedData ? category.mergedData.data.list : []
           }));
+          
+          const totalImportedRecords = importedData.value.reduce((sum, cat) => sum + cat.records.length, 0);
+          logger.info('新格式文件解析成功', {
+            importedCategories: importedData.value.length,
+            totalImportedRecords: totalImportedRecords
+          });
         } else if (Array.isArray(data)) {
           // 旧格式：直接使用数组
+          logger.debug('检测到旧格式导出文件', {
+            arrayLength: data.length
+          });
+          
           importedData.value = data;
+          
+          const totalImportedRecords = importedData.value.reduce((sum, cat) => sum + cat.records.length, 0);
+          logger.info('旧格式文件解析成功', {
+            importedCategories: importedData.value.length,
+            totalImportedRecords: totalImportedRecords
+          });
         } else {
+          logger.error('文件格式错误', {
+            dataType: typeof data,
+            hasCategories: !!(data && typeof data === 'object' && data.categories),
+            isArray: Array.isArray(data)
+          });
           showToast('文件格式错误');
           return;
         }
         expandedImportedCategories.value = {};
         
+        logger.info('寻访记录导入成功', {
+          fileName: file.name,
+          importedCategories: importedData.value.length,
+          totalRecords: importedData.value.reduce((sum, cat) => sum + cat.records.length, 0)
+        });
         showToast('寻访记录导入成功');
       } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : '未知错误';
+        logger.error('导入文件解析失败', {
+          error: errorMessage,
+          stack: error instanceof Error ? error.stack : undefined,
+          fileName: file.name,
+          fileSize: file.size
+        });
         console.error('导入失败:', error);
         showToast('文件解析失败，请检查文件格式');
       }
+    };
+    
+    reader.onerror = (error) => {
+      logger.error('文件读取失败', {
+        fileName: file.name,
+        error: error
+      });
+      showToast('文件读取失败');
     };
     
     reader.readAsText(file);
@@ -646,6 +985,14 @@ const toggleImportedCategory = (index: number) => {
 
 // 清除导入数据
 const clearImportedData = () => {
+  const previousDataCount = importedData.value.length;
+  const previousRecordsCount = importedData.value.reduce((sum, cat) => sum + cat.records.length, 0);
+  
+  logger.info('用户清除导入数据', {
+    previousCategories: previousDataCount,
+    previousRecords: previousRecordsCount
+  });
+  
   importedData.value = [];
   expandedImportedCategories.value = {};
   showToast('导入数据已清除');
@@ -731,35 +1078,79 @@ const loadAllPoolNames = async (
   accountToken: string,
   categoryList: GachaCategory[]
 ) => {
-  const promises = categoryList.map(async (category) => {
+  logger.info('开始预加载所有卡池的poolName', {
+    categoriesCount: categoryList.length
+  });
+  
+  const promises = categoryList.map(async (category, index) => {
     try {
-      const response = await getGachaHistory(
-        uid,
-        cookie,
-        roleToken,
-        accountToken,
-        category.id,
-        1, // 只获取1条记录来获取poolName
-        undefined,
-        undefined
-      );
+      logger.debug(`获取卡池${index + 1}/${categoryList.length}的poolName`, {
+        categoryId: category.id,
+        categoryName: category.name
+      });
+      
+      const response = await logger.performanceAsync(`获取卡池${category.id}的poolName`, async () => {
+        return await getGachaHistory(
+          uid,
+          cookie,
+          roleToken,
+          accountToken,
+          category.id,
+          1, // 只获取1条记录来获取poolName
+          undefined,
+          undefined
+        );
+      });
       
       if (response.list.length > 0) {
         const firstRecord = response.list[0];
         categoryPoolNames.value.set(category.id, firstRecord.poolName);
+        logger.debug(`卡池${category.id}的poolName获取成功`, {
+          poolName: firstRecord.poolName,
+          categoryId: category.id
+        });
+      } else {
+        logger.warn(`卡池${category.id}无记录，无法获取poolName`, {
+          categoryId: category.id,
+          categoryName: category.name
+        });
       }
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : '未知错误';
+      logger.error(`获取卡池 ${category.id} 的poolName失败`, {
+        error: errorMessage,
+        stack: error instanceof Error ? error.stack : undefined,
+        categoryId: category.id,
+        categoryName: category.name
+      });
       console.warn(`获取卡池 ${category.id} 的poolName失败:`, error);
     }
   });
   
-  await Promise.all(promises);
+  const results = await Promise.allSettled(promises);
+  const successful = results.filter(r => r.status === 'fulfilled').length;
+  const failed = results.filter(r => r.status === 'rejected').length;
+  
+  logger.info('卡池poolName预加载完成', {
+    totalCategories: categoryList.length,
+    successful: successful,
+    failed: failed,
+    successRate: `${((successful / categoryList.length) * 100).toFixed(1)}%`
+  });
 };
 
 // 生命周期
 onMounted(() => {
+  logger.gacha('寻访记录组件已挂载', {
+    isLogin: authStore.isLogin,
+    hasMainUid: !!authStore.mainUid,
+    hasHgToken: !!authStore.hgToken
+  });
+  
   if (authStore.isLogin) {
     refreshGachaData();
+  } else {
+    logger.gacha('用户未登录，跳过寻访记录数据加载');
   }
 });
 </script>
@@ -979,6 +1370,8 @@ onMounted(() => {
   color: #ffffff;
   border-color: #646cff;
 }
+
+
 
 /* 卡池列表样式 */
 .categories-list {

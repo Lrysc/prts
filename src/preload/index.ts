@@ -3,6 +3,11 @@ import { electronAPI } from '@electron-toolkit/preload'
 
 // Custom APIs for renderer
 const api = {
+  // API请求代理，专门用于解决CORS问题
+  apiRequest: async (url: string, options?: any) => {
+    return ipcRenderer.invoke('api-request', { url, options })
+  },
+  
   // 代理HTTP请求，用于绕过浏览器安全限制
   proxyRequest: async (url: string, options?: any) => {
     return ipcRenderer.invoke('proxy-request', { url, options })

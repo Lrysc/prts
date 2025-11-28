@@ -2,11 +2,51 @@
 // 基础配置
 // ============================================================================
 
+import { logger } from './logger';
+
 const isDev = import.meta.env.DEV;
 const API_BASE = {
   ak: isDev ? '/api/ak' : 'https://ak.hypergryph.com',
   binding: isDev ? '/api/binding' : 'https://binding-api-account-prod.hypergryph.com',
   web: isDev ? '/api/hg' : 'https://as.hypergryph.com'
+};
+
+/**
+ * 统一的HTTP请求函数，自动处理CORS问题
+ */
+const httpRequest = async (url: string, options: RequestInit = {}): Promise<Response> => {
+  if (isDev) {
+    // 开发环境：使用fetch和代理
+    return fetch(url, options);
+  } else {
+    // 生产环境：使用Electron的API代理
+    const result = await (window as any).api.apiRequest(url, options);
+    
+    if (!result.success) {
+      throw new Error(result.error || `HTTP error: ${result.status || 'Unknown'}`);
+    }
+    
+    // 模拟Response对象
+    const mockHeaders = new Headers();
+    if (result.headers) {
+      Object.entries(result.headers).forEach(([key, value]) => {
+        if (Array.isArray(value)) {
+          value.forEach(v => mockHeaders.append(key, v));
+        } else {
+          mockHeaders.set(key, value as string);
+        }
+      });
+    }
+    
+    return {
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      headers: mockHeaders,
+      json: async () => result.data,
+      text: async () => JSON.stringify(result.data)
+    } as Response;
+  }
 };
 
 /**
@@ -101,110 +141,139 @@ export interface GachaHistoryResponse {
  * 流程1：通过手机号密码获取token
  */
 export const getTokenByPhonePassword = async (phone: string, password: string): Promise<string> => {
-  const url = `${API_BASE.web}/user/auth/v1/token_by_phone_password`;
-  
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: getCommonHeaders(),
-    body: JSON.stringify({ phone, password })
-  });
+  return await logger.trackApiParams(
+    'getTokenByPhonePassword',
+    `${API_BASE.web}/user/auth/v1/token_by_phone_password`,
+    {
+      phone,
+      password: password ? '[已隐藏]' : null,
+      url: `${API_BASE.web}/user/auth/v1/token_by_phone_password`,
+      method: 'POST',
+      headers: getCommonHeaders()
+    },
+    async (validParams) => {
+      const response = await httpRequest(validParams.url, {
+        method: validParams.method,
+        headers: validParams.headers,
+        body: JSON.stringify({ phone: validParams.phone, password })
+      });
 
-  const data = await handleHgApiResponse(response, '获取token');
-  return data.data.token;
+      const data = await handleHgApiResponse(response, '获取token');
+      return data.data.token;
+    }
+  );
 };
 
 /**
  * 流程2：OAuth2授权
  */
 export const getOAuth2Grant = async (token: string): Promise<{ token: string; hgId: string }> => {
-  const url = `${API_BASE.web}/user/oauth2/v2/grant`;
-  
-  console.log('OAuth2授权请求URL:', url);
-  console.log('OAuth2授权请求体:', {
-    token: token.substring(0, 20) + '...',
-    appCode: 'be36d44aa36bfb5b',
-    type: 1
-  });
-  
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: getCommonHeaders(),
-    body: JSON.stringify({
-      token,
+  return await logger.trackApiParams(
+    'getOAuth2Grant',
+    `${API_BASE.web}/user/oauth2/v2/grant`,
+    {
+      token: token ? token.substring(0, 20) + '...' : null,
       appCode: 'be36d44aa36bfb5b',
-      type: 1
-    })
-  });
+      type: 1,
+      url: `${API_BASE.web}/user/oauth2/v2/grant`,
+      method: 'POST',
+      headers: getCommonHeaders()
+    },
+    async (validParams) => {
+      const response = await fetch(validParams.url, {
+        method: validParams.method,
+        headers: validParams.headers,
+        body: JSON.stringify({
+          token: token,
+          appCode: validParams.appCode,
+          type: validParams.type
+        })
+      });
 
-  const data = await handleHgApiResponse(response, 'OAuth2授权');
-  return data.data;
+      const data = await handleHgApiResponse(response, 'OAuth2授权');
+      return data.data;
+    }
+  );
 };
 
 /**
  * 流程3：获取x-role-token
  */
 export const getU8TokenByUid = async (token: string, uid: string): Promise<string> => {
-  const url = `${API_BASE.binding}/account/binding/v1/u8_token_by_uid`;
-  
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: getCommonHeaders(),
-    body: JSON.stringify({ token, uid })
-  });
+  return await logger.trackApiParams(
+    'getU8TokenByUid',
+    `${API_BASE.binding}/account/binding/v1/u8_token_by_uid`,
+    {
+      token: token ? token.substring(0, 20) + '...' : null,
+      uid,
+      url: `${API_BASE.binding}/account/binding/v1/u8_token_by_uid`,
+      method: 'POST',
+      headers: getCommonHeaders()
+    },
+    async (validParams) => {
+      const response = await httpRequest(validParams.url, {
+        method: validParams.method,
+        headers: validParams.headers,
+        body: JSON.stringify({ token, uid: validParams.uid })
+      });
 
-  const data = await handleHgApiResponse(response, '获取u8 token');
-  return data.data.token;
+      const data = await handleHgApiResponse(response, '获取u8 token');
+      return data.data.token;
+    }
+  );
 };
 
 /**
  * 流程4：角色登录获取cookie
  */
 export const roleLogin = async (token: string): Promise<string> => {
-  const url = `${API_BASE.ak}/user/api/role/login`;
-  
-  console.log('角色登录请求URL:', url);
-  console.log('角色登录请求体:', {
-    token: token.substring(0, 20) + '...',
-    source_from: '',
-    share_type: '',
-    share_by: ''
-  });
-  
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: getCommonHeaders(),
-    credentials: 'include', // 重要：包含cookie
-    body: JSON.stringify({
-      token,
+  return await logger.trackApiParams(
+    'roleLogin',
+    `${API_BASE.ak}/user/api/role/login`,
+    {
+      token: token ? token.substring(0, 20) + '...' : null,
       source_from: '',
       share_type: '',
-      share_by: ''
-    })
-  });
+      share_by: '',
+      url: `${API_BASE.ak}/user/api/role/login`,
+      method: 'POST',
+      headers: getCommonHeaders()
+    },
+    async (validParams) => {
+      const response = await httpRequest(validParams.url, {
+        method: validParams.method,
+        headers: validParams.headers,
+        body: JSON.stringify({
+          token,
+          source_from: validParams.source_from,
+          share_type: validParams.share_type,
+          share_by: validParams.share_by
+        })
+      });
 
-  const data = await handleApiResponse(response, '角色登录');
+      const data = await handleApiResponse(response, '角色登录');
   
-  // 优先从响应体中获取cookie（通过代理处理）
-  if (data.data && data.data.cookie) {
-    console.log('从响应体获取到cookie:', data.data.cookie.substring(0, 50) + '...');
-    return data.data.cookie;
-  }
-  
-  // 备用方案：尝试从响应头获取（可能由于CORS限制而失败）
-  const setCookieHeader = response.headers.get('set-cookie');
-  if (setCookieHeader) {
-    console.log('从响应头获取到cookie');
-    const match = setCookieHeader.match(/ak-user-center=([^;]+)/);
-    if (match) {
-      return decodeURIComponent(match[1]);
+      // 优先从响应体中获取cookie（通过代理处理）
+      if (data.data && data.data.cookie) {
+        console.log('从响应体获取到cookie:', data.data.cookie.substring(0, 50) + '...');
+        return data.data.cookie;
+      }
+      
+      // 备用方案：尝试从响应头获取（在Electron中应该能正常工作）
+      const setCookieHeader = response.headers.get('set-cookie');
+      if (setCookieHeader) {
+        console.log('从响应头获取到cookie');
+        const match = setCookieHeader.match(/ak-user-center=([^;]+)/);
+        if (match) {
+          return decodeURIComponent(match[1]);
+        }
+      }
+      
+      // 如果无法从响应头获取，返回空字符串
+      console.warn('无法从响应头获取cookie，返回空字符串');
+      return '';
     }
-  }
-  
-  // 临时解决方案：使用一个固定的cookie值进行测试
-  // 这里使用gachaAPI.md中的示例cookie值进行测试
-  const tempCookie = 'TTuIkHeVJ2pRzI7x5rkcFa%2BaeCz%2FCBzjNPdb5bHK0pSntD2ZBfNibkQoAaKMxjKXKq1ZJrJW4z3cJr6dv9tymmjF%2FzAHumDC5TLCxXPt5XI4R%2FWkUs8EDCR7ZZk61hf1TGdl9kZC6epOBd7D16W93%2B0vfoNd48DpGS5BWjTJsl3UyDmWd9%2F2DoRWWkPvl5vp5PJACyySMa9Q1odhhOe1qHBTTv2teIJSUEajX4rJsmDP%2FXwP7O%2F2uV1wSAwRJYlFWG%2FOmcBBPAqYVY86cKWIukZalqXeMnBPkJHPbcthBiqwelPaqCYXnujodNXv021obOSiUCDbd4QCOWm34yG6rHGpVjCfIUqREQLwkMV2xxnJXYF3YWcikhvEn8EZNEFI%2BVbQSEhgQD9ord86kROp9jnKKviCcq1nkGUYK4U1QYk%3D';
-  
-  return tempCookie;
+  );
 };
 
 /**
@@ -218,18 +287,42 @@ export const getGachaCategories = async (
 ): Promise<GachaCategory[]> => {
   const url = `${API_BASE.ak}/user/api/inquiry/gacha/cate?uid=${uid}`;
   
-  const response = await fetch(url, {
-    method: 'GET',
-    headers: {
-      ...getCommonHeaders(),
-      'Cookie': `ak-user-center=${cookie}`,
-      'x-role-token': roleToken,
-      'x-account-token': accountToken
-    }
-  });
+  const headers: Record<string, string> = {
+    ...getCommonHeaders(),
+    'Cookie': `ak-user-center=${cookie}`
+  };
+  
+  // 在生产环境中，这些token可能为空
+  if (roleToken) {
+    headers['x-role-token'] = roleToken;
+  }
+  
+  if (accountToken) {
+    headers['x-account-token'] = accountToken;
+  }
 
-  const data = await handleApiResponse(response, '获取卡池分类');
-  return data.data;
+  return await logger.trackApiParams(
+    'getGachaCategories',
+    url,
+    {
+      uid,
+      cookie: cookie ? '[已设置]' : null,
+      roleToken: roleToken ? '[已设置]' : null,
+      accountToken: accountToken ? '[已设置]' : null,
+      url,
+      method: 'GET',
+      headers
+    },
+    async (validParams) => {
+      const response = await httpRequest(validParams.url, {
+        method: validParams.method,
+        headers: validParams.headers
+      });
+
+      const data = await handleApiResponse(response, '获取卡池分类');
+      return data.data;
+    }
+  );
 };
 
 /**
@@ -261,38 +354,66 @@ export const getGachaHistory = async (
   
   const url = `${API_BASE.ak}/user/api/inquiry/gacha/history?${params}`;
   
-  const response = await fetch(url, {
-    method: 'GET',
-    headers: {
-      ...getCommonHeaders(),
-      'Cookie': `ak-user-center=${cookie}`,
-      'x-role-token': roleToken,
-      'x-account-token': accountToken
-    }
-  });
+  const headers: Record<string, string> = {
+    ...getCommonHeaders(),
+    'Cookie': `ak-user-center=${cookie}`
+  };
+  
+  // 在生产环境中，这些token可能为空
+  if (roleToken) {
+    headers['x-role-token'] = roleToken;
+  }
+  
+  if (accountToken) {
+    headers['x-account-token'] = accountToken;
+  }
 
-  const data = await handleApiResponse(response, '获取抽卡记录');
-  console.log('getGachaHistory 完整响应 data:', data);
-  console.log('getGachaHistory 返回的 data.data:', data.data);
-  
-  // 检查 data.data 是否存在且包含必要字段
-  if (!data.data) {
-    console.error('getGachaHistory data.data 为空:', data.data);
-    // 返回一个默认的空结构，而不是抛出错误
-    return {
-      list: [],
-      hasMore: false
-    };
-  }
-  
-  // 如果 data.data 不是预期的格式，尝试直接返回
-  if (!data.data.hasOwnProperty('list') || !data.data.hasOwnProperty('hasMore')) {
-    console.warn('getGachaHistory data.data 格式异常，可能为空响应:', data.data);
-    return {
-      list: [],
-      hasMore: false
-    };
-  }
-  
-  return data.data;
+  return await logger.trackApiParams(
+    'getGachaHistory',
+    url,
+    {
+      uid,
+      cookie: cookie ? '[已设置]' : null,
+      roleToken: roleToken ? '[已设置]' : null,
+      accountToken: accountToken ? '[已设置]' : null,
+      category,
+      size,
+      pos,
+      gachaTs,
+      url,
+      method: 'GET',
+      headers
+    },
+    async (validParams) => {
+      const response = await httpRequest(validParams.url, {
+        method: validParams.method,
+        headers: validParams.headers
+      });
+
+      const data = await handleApiResponse(response, '获取抽卡记录');
+      console.log('getGachaHistory 完整响应 data:', data);
+      console.log('getGachaHistory 返回的 data.data:', data.data);
+      
+      // 检查 data.data 是否存在且包含必要字段
+      if (!data.data) {
+        console.error('getGachaHistory data.data 为空:', data.data);
+        // 返回一个默认的空结构，而不是抛出错误
+        return {
+          list: [],
+          hasMore: false
+        };
+      }
+      
+      // 如果 data.data 不是预期的格式，尝试直接返回
+      if (!data.data.hasOwnProperty('list') || !data.data.hasOwnProperty('hasMore')) {
+        console.warn('getGachaHistory data.data 格式异常，可能为空响应:', data.data);
+        return {
+          list: [],
+          hasMore: false
+        };
+      }
+      
+      return data.data;
+    }
+  );
 };

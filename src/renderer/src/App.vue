@@ -461,16 +461,16 @@ const componentMap: Record<string, any> = {
                 公招计算
               </li>
               <li
-                :class="['nav-item', { 'nav-item-active': activeComponent === 'Material' }]"
-                @click="switchComponent('Material')"
-              >
-                材料计算
-              </li>
-              <li
                 :class="['nav-item', { 'nav-item-active': activeComponent === 'HeadhuntingRecord' }]"
                 @click="switchComponent('HeadhuntingRecord')"
               >
                 寻访记录
+              </li>
+              <li
+                :class="['nav-item', { 'nav-item-active': activeComponent === 'Material' }]"
+                @click="switchComponent('Material')"
+              >
+                材料计算
               </li>
             </ul>
           </div>
@@ -479,8 +479,8 @@ const componentMap: Record<string, any> = {
 
       <!-- 主内容区 -->
       <main class="main-content">
-        <component 
-          :is="componentMap[activeComponent]" 
+        <component
+          :is="componentMap[activeComponent]"
           @showLogin="showLogin = true"
         />
       </main>

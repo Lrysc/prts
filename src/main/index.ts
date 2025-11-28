@@ -24,7 +24,7 @@ function createWindow(): void {
       sandbox: false,
       nodeIntegration: false,
       contextIsolation: true,
-      webSecurity: true, // 启用webSecurity，正确解决CORS问题
+      webSecurity: true, // 启用webSecurity，通过其他方式解决CORS
       allowRunningInsecureContent: false
     }
   })
@@ -181,65 +181,21 @@ function createWindow(): void {
     })
   }
 
-  // 允许跨域请求的域名列表
-  const allowedOrigins = [
-    'https://as.hypergryph.com',
-    'https://web-api.hypergryph.com',
-    'https://ak.hypergryph.com',
-    'https://zonai.skland.com',
-    'https://www.skland.com'
-  ]
-
-  // 处理CORS预检请求和响应头
-  mainWindow.webContents.session.webRequest.onBeforeSendHeaders(
-    { urls: allowedOrigins.map(origin => `${origin}/*`) },
-    (details, callback) => {
-      const requestHeaders = {
-        ...details.requestHeaders,
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36 Edg/142.0.0.0',
-        'sec-ch-ua': '"Chromium";v="142", "Microsoft Edge";v="142", "Not_A Brand";v="99"',
-        'sec-ch-ua-mobile': '?0',
-        'sec-ch-ua-platform': '"Windows"',
-        'sec-fetch-dest': 'empty',
-        'sec-fetch-mode': 'cors',
-        'sec-fetch-site': 'cross-site'
-      }
-
-      // 移除 Electron 相关的头
-      delete requestHeaders['x-electron']
-
-      callback({ requestHeaders })
-    }
-  )
-
-  // 处理响应头 - 添加CORS头
-  mainWindow.webContents.session.webRequest.onHeadersReceived(
-    { urls: allowedOrigins.map(origin => `${origin}/*`) },
-    (details, callback) => {
-      const responseHeaders = {
+  // 完全禁用webSecurity来解决CORS问题
+  mainWindow.webContents.session.webRequest.onHeadersReceived((details, callback) => {
+    callback({
+      responseHeaders: {
         ...details.responseHeaders,
         'Access-Control-Allow-Origin': ['*'],
         'Access-Control-Allow-Methods': ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
         'Access-Control-Allow-Headers': ['*'],
-        'Access-Control-Allow-Credentials': ['true'],
-        'Access-Control-Max-Age': ['86400'] // 24小时缓存
+        'Access-Control-Allow-Credentials': ['false']
       }
+    })
+  })
 
-      // 如果是预检请求，直接返回成功
-      if (details.method === 'OPTIONS') {
-        callback({
-          cancel: false,
-          responseHeaders: {
-            ...responseHeaders,
-            'Content-Length': ['0'],
-            'Content-Type': ['text/plain']
-          }
-        })
-      } else {
-        callback({ responseHeaders })
-      }
-    }
-  )
+  // 设置用户代理
+  mainWindow.webContents.session.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36')
 
   mainWindow.on('ready-to-show', () => {
     mainWindow?.show()
@@ -344,6 +300,58 @@ app.whenReady().then(() => {
       return mainWindow.isMaximized()
     }
     return false
+  })
+
+  // API请求代理处理器 - 解决CORS问题的主要方案
+  ipcMain.handle('api-request', async (_event, { url, options = {} }) => {
+    try {
+      console.log('API代理请求:', url)
+
+      const requestOptions: any = {
+        method: options.method || 'GET',
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36 Edg/142.0.0.0',
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          ...options.headers
+        }
+      }
+
+      // 如果有请求体，添加body
+      if (options.body) {
+        requestOptions.body = typeof options.body === 'string' ? options.body : JSON.stringify(options.body)
+      }
+
+      console.log('最终请求选项:', requestOptions)
+
+      const response = await net.fetch(url, requestOptions)
+
+      console.log('代理响应状态:', response.status)
+      console.log('代理响应头:', Object.fromEntries(response.headers.entries()))
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        console.log('代理错误响应:', errorText)
+        return {
+          success: false,
+          status: response.status,
+          statusText: response.statusText,
+          error: `HTTP ${response.status}: ${errorText}`
+        }
+      }
+
+      const data = await response.json()
+      console.log('代理成功响应:', data)
+      return { 
+        success: true, 
+        data,
+        headers: Object.fromEntries(response.headers.entries())
+      }
+    } catch (error) {
+      console.error('API代理请求失败:', error)
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
+      return { success: false, error: errorMessage }
+    }
   })
 
   // HTTP请求代理处理器 - 作为备用方案
