@@ -3,10 +3,29 @@
     <div class="header">
       <h2>寻访记录</h2>
       <div class="actions">
-        <button @click="refreshGachaData" class="refresh-btn" :disabled="loading" title="刷新数据">
-          <span v-if="!loading">刷新</span>
-          <span v-else>刷新中...</span>
+        <button @click="exportGachaData" class="export-btn" title="导出寻访记录" :disabled="exportLoading">
+          {{ exportLoading ? '导出中...' : '导出记录' }}
         </button>
+        <button @click="importGachaData" class="import-btn" title="导入寻访记录">
+          导入记录
+        </button>
+        <button 
+          v-if="importedData.length > 0" 
+          @click="exportMergedImportedData" 
+          class="export-merged-btn" 
+          title="导出合并后的导入数据"
+        >
+          导出合并
+        </button>
+      </div>
+    </div>
+
+    <!-- 导出加载提示 -->
+    <div v-if="exportLoading" class="export-loading-overlay">
+      <div class="export-loading-content">
+        <div class="export-loading-spinner"></div>
+        <p>正在导出寻访记录，请稍候...</p>
+        <p class="export-progress">{{ exportProgress }}</p>
       </div>
     </div>
 
@@ -46,7 +65,7 @@
           @click="selectCategory(category)"
         >
           <h4>{{ category.name.replace('\\n', ' ') }}</h4>
-          <p class="category-id">{{ category.id }}</p>
+          <p class="category-poolname">{{ getPoolNameForCategory(category.id) }}</p>
         </div>
       </div>
     </div>
@@ -98,7 +117,7 @@
         </button>
         
         <span class="page-info">
-          第 {{ currentPage }} 页，共 {{ totalPages }} 页
+          第 {{ currentPage }} 页
         </span>
         
         <button 
@@ -131,6 +150,56 @@
         <p>当前账号暂无可用卡池</p>
       </div>
     </div>
+
+    <!-- 已导入的寻访记录 -->
+    <div v-if="importedData.length > 0" class="imported-records">
+      <div class="imported-header">
+        <h3>已导入的寻访记录</h3>
+        <button @click="clearImportedData" class="clear-btn" title="清除导入数据">
+          清除数据
+        </button>
+      </div>
+      
+      <div class="imported-categories">
+        <div
+          v-for="(category, index) in importedData"
+          :key="index"
+          class="imported-category"
+        >
+          <h4 @click="toggleImportedCategory(index)">
+            {{ category.categoryName }}
+            <span class="toggle-icon">{{ expandedImportedCategories[index] ? '▼' : '▶' }}</span>
+          </h4>
+          
+          <div v-if="expandedImportedCategories[index]" class="imported-records-table">
+            <table class="gacha-table">
+              <thead>
+                <tr>
+                  <th>序号</th>
+                  <th>卡池名称</th>
+                  <th>干员名称</th>
+                  <th>星级</th>
+                  <th>获取时间</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="(record, recordIndex) in category.records" :key="recordIndex">
+                  <td>{{ recordIndex + 1 }}</td>
+                  <td>{{ record.poolName }}</td>
+                  <td>{{ record.charName }}</td>
+                  <td>
+                    <span class="rarity-badge" :class="`rarity-${record.rarity}`">
+                      {{ getRarityText(record.rarity) }}
+                    </span>
+                  </td>
+                  <td>{{ formatTime(record.gachaTs) }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -144,8 +213,10 @@ import {
   getGachaCategories, 
   getGachaHistory,
   type GachaCategory,
-  type GachaRecord
+  type GachaRecord,
+  type GachaHistoryResponse
 } from '@services/Gacha';
+import { showToast } from '@services/toastService';
 
 // 定义组件事件
 const emit = defineEmits<{
@@ -160,10 +231,23 @@ const loading = ref(false);
 const loadingText = ref('');
 const error = ref<string | null>(null);
 
+// 导出相关状态
+const exportLoading = ref(false);
+const exportProgress = ref('');
+
 // 卡池相关状态
 const categories = ref<GachaCategory[]>([]);
 const selectedCategory = ref<GachaCategory | null>(null);
 const gachaRecords = ref<GachaRecord[]>([]);
+const categoryPoolNames = ref<Map<string, string>>(new Map());
+
+// 导入数据相关状态
+const importedData = ref<Array<{
+  categoryName: string;
+  categoryId?: string;
+  records: GachaRecord[];
+}>>([]);
+const expandedImportedCategories = ref<Record<number, boolean>>({});
 
 // 分页相关状态
 const currentPage = ref(1);
@@ -177,10 +261,6 @@ const currentPageRecords = computed(() => {
   const start = (currentPage.value - 1) * pageSize;
   const end = start + pageSize;
   return gachaRecords.value.slice(start, end);
-});
-
-const totalPages = computed(() => {
-  return Math.ceil(gachaRecords.value.length / pageSize);
 });
 
 // 方法
@@ -240,6 +320,10 @@ const executeGachaFlow = async () => {
   loadingText.value = '正在获取卡池列表...';
   const categoryList = await getGachaCategories(uid, cookie, roleToken, token);
   categories.value = categoryList;
+  
+  // 预先获取所有卡池的poolName
+  loadingText.value = '正在获取卡池详细信息...';
+  await loadAllPoolNames(uid, cookie, roleToken, token, categoryList);
   
   // 保存认证信息到本地存储，供后续使用
   localStorage.setItem('gacha_auth', JSON.stringify({
@@ -324,6 +408,8 @@ const nextPage = async () => {
   if (hasNextPage.value && !loading.value) {
     currentPage.value++;
     await loadGachaRecords();
+  } else if (!hasNextPage.value && !loading.value) {
+    showToast('没有更多内容了');
   }
 };
 
@@ -341,11 +427,11 @@ const getRecordIndex = (index: number) => {
 
 const getRarityText = (rarity: number) => {
   const rarityMap: { [key: number]: string } = {
-    2: '二星',
-    3: '三星', 
-    4: '四星',
-    5: '五星',
-    6: '六星'
+    1: '二星',
+    2: '三星', 
+    3: '四星',
+    4: '五星',
+    5: '六星'
   };
   return rarityMap[rarity] || `${rarity}星`;
 };
@@ -359,6 +445,315 @@ const formatTime = (timestamp: string) => {
     hour: '2-digit',
     minute: '2-digit'
   });
+};
+
+const getPoolNameForCategory = (categoryId: string) => {
+  return categoryPoolNames.value.get(categoryId) || '';
+};
+
+// 导出寻访记录（原始数据格式）
+const exportGachaData = async () => {
+  if (categories.value.length === 0) {
+    showToast('没有可导出的数据');
+    return;
+  }
+
+  exportLoading.value = true;
+  exportProgress.value = '准备导出...';
+
+  try {
+    // 获取保存的认证信息
+    const authData = localStorage.getItem('gacha_auth');
+    if (!authData) {
+      showToast('认证信息已过期，无法导出数据');
+      return;
+    }
+    
+    const { uid, cookie, roleToken, accountToken } = JSON.parse(authData);
+    
+    // 创建原始数据格式的导出对象
+    const rawDataExport = {
+      exportTime: new Date().toISOString(),
+      uid: uid,
+      categories: [] as any[]
+    };
+    
+    const totalCategories = categories.value.length;
+    
+    for (let i = 0; i < totalCategories; i++) {
+      const category = categories.value[i];
+      
+      try {
+        exportProgress.value = `正在导出卡池 ${i + 1}/${totalCategories}: ${category.name.replace('\\n', ' ')}`;
+        
+        // 使用现有的 getGachaHistory 函数来获取数据
+        const allApiResponses: Array<{
+          code: number;
+          data: GachaHistoryResponse;
+          msg: string;
+        }> = [];
+        const allRecords: GachaRecord[] = [];
+        let currentPos: number | undefined = 0; // 第一次请求 pos=0
+        let currentTs: string | undefined;
+        let hasMore = true;
+        let pageCount = 0;
+        
+        while (hasMore) {
+          pageCount++;
+          exportProgress.value = `正在导出卡池 ${i + 1}/${totalCategories}: ${category.name.replace('\\n', ' ')} (第${pageCount}页)`;
+          
+          const response = await getGachaHistory(
+            uid,
+            cookie,
+            roleToken,
+            accountToken,
+            category.id,
+            10, // 使用正常的分页大小
+            currentPos,
+            currentTs
+          );
+          
+          console.log(`导出卡池 ${category.name} 的响应:`, response);
+          
+          // 创建模拟的原始API响应格式
+          const mockRawData = {
+            code: 0,
+            data: response,
+            msg: ''
+          };
+          allApiResponses.push(mockRawData);
+          
+          // 检查响应结构并更新分页参数
+          if (response && response.list && Array.isArray(response.list)) {
+            hasMore = response.hasMore;
+            allRecords.push(...response.list);
+            
+            if (response.list.length > 0) {
+              // 使用最后一条记录的 pos 和 gachaTs 作为下一页的参数
+              const lastRecord = response.list[response.list.length - 1];
+              currentPos = lastRecord.pos;
+              currentTs = lastRecord.gachaTs;
+            } else {
+              hasMore = false;
+            }
+          } else {
+            hasMore = false;
+          }
+        }
+        
+        // 保存合并后的数据，同时保留原始响应
+        if (allRecords.length > 0) {
+          rawDataExport.categories.push({
+            categoryInfo: category,
+            apiResponses: allApiResponses,
+            mergedData: {
+              code: 0,
+              data: {
+                list: allRecords,
+                hasMore: false
+              },
+              msg: ''
+            }
+          });
+        }
+        
+      } catch (err: unknown) {
+        console.error(`导出卡池 ${category.name} 时发生错误:`, err);
+        const errorMessage = err instanceof Error ? err.message : '未知错误';
+        showToast(`导出卡池 ${category.name} 时发生错误: ${errorMessage}`);
+      }
+    }
+    
+    if (rawDataExport.categories.length === 0) {
+      showToast('没有可导出的记录');
+      return;
+    }
+    
+    exportProgress.value = '正在生成文件...';
+    
+    // 创建并下载原始JSON文件
+    const dataStr = JSON.stringify(rawDataExport, null, 2);
+    const dataBlob = new Blob([dataStr], { type: 'application/json' });
+    const url = URL.createObjectURL(dataBlob);
+    
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `寻访记录_原始数据_${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    
+    showToast('寻访记录（原始数据格式）导出成功');
+  } catch (err: unknown) {
+    console.error('导出失败:', err);
+    showToast('导出失败，请重试');
+  } finally {
+    exportLoading.value = false;
+    exportProgress.value = '';
+  }
+};
+
+// 导入寻访记录
+const importGachaData = () => {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.json';
+  
+  input.onchange = (event) => {
+    const file = (event.target as HTMLInputElement).files?.[0];
+    if (!file) return;
+    
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = JSON.parse(e.target?.result as string);
+        
+        // 检查是否是新的导出格式（包含categories字段的对象）
+        if (data && typeof data === 'object' && data.categories && Array.isArray(data.categories)) {
+          // 新格式：提取categories数组
+          importedData.value = data.categories.map((category: any) => ({
+            categoryName: category.categoryInfo.name.replace('\\n', ' '),
+            categoryId: category.categoryInfo.id,
+            records: category.mergedData ? category.mergedData.data.list : []
+          }));
+        } else if (Array.isArray(data)) {
+          // 旧格式：直接使用数组
+          importedData.value = data;
+        } else {
+          showToast('文件格式错误');
+          return;
+        }
+        expandedImportedCategories.value = {};
+        
+        showToast('寻访记录导入成功');
+      } catch (error) {
+        console.error('导入失败:', error);
+        showToast('文件解析失败，请检查文件格式');
+      }
+    };
+    
+    reader.readAsText(file);
+  };
+  
+  input.click();
+};
+
+// 切换导入卡池的展开/收起状态
+const toggleImportedCategory = (index: number) => {
+  expandedImportedCategories.value[index] = !expandedImportedCategories.value[index];
+};
+
+// 清除导入数据
+const clearImportedData = () => {
+  importedData.value = [];
+  expandedImportedCategories.value = {};
+  showToast('导入数据已清除');
+};
+
+// 导出合并后的导入数据
+const exportMergedImportedData = () => {
+  if (importedData.value.length === 0) {
+    showToast('没有可导出的导入数据');
+    return;
+  }
+
+  try {
+    // 按卡池ID合并数据
+    const mergedCategories = new Map();
+    
+    for (const category of importedData.value) {
+      const categoryId = category.categoryId || category.categoryName;
+      
+      if (!mergedCategories.has(categoryId)) {
+        // 如果这个卡池还没有数据，创建新的条目
+        mergedCategories.set(categoryId, {
+          categoryName: category.categoryName,
+          categoryId: category.categoryId || categoryId,
+          records: []
+        });
+      }
+      
+      // 合并记录
+      const existingCategory = mergedCategories.get(categoryId);
+      existingCategory.records.push(...category.records);
+    }
+    
+    // 去重并排序记录（按时间戳）
+    for (const category of mergedCategories.values()) {
+      // 按gachaTs去重（保留最新的记录）
+      const uniqueRecords = new Map();
+      for (const record of category.records) {
+        const key = `${record.charId}_${record.gachaTs}`;
+        if (!uniqueRecords.has(key) || record.gachaTs > uniqueRecords.get(key).gachaTs) {
+          uniqueRecords.set(key, record);
+        }
+      }
+      
+      // 转换为数组并按时间戳排序（最新的在前）
+      category.records = Array.from(uniqueRecords.values())
+        .sort((a, b) => new Date(b.gachaTs).getTime() - new Date(a.gachaTs).getTime());
+    }
+    
+    // 创建导出数据
+    const mergedData = Array.from(mergedCategories.values());
+    
+    // 创建并下载JSON文件
+    const dataStr = JSON.stringify({
+      exportTime: new Date().toISOString(),
+      exportType: 'merged_imported_data',
+      totalCategories: mergedData.length,
+      categories: mergedData
+    }, null, 2);
+    
+    const dataBlob = new Blob([dataStr], { type: 'application/json' });
+    const url = URL.createObjectURL(dataBlob);
+    
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `合并寻访记录_${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    
+    showToast(`合并寻访记录导出成功，共${mergedData.length}个卡池`);
+  } catch (err: unknown) {
+    console.error('导出合并数据失败:', err);
+    showToast('导出合并数据失败，请重试');
+  }
+};
+
+const loadAllPoolNames = async (
+  uid: string,
+  cookie: string,
+  roleToken: string,
+  accountToken: string,
+  categoryList: GachaCategory[]
+) => {
+  const promises = categoryList.map(async (category) => {
+    try {
+      const response = await getGachaHistory(
+        uid,
+        cookie,
+        roleToken,
+        accountToken,
+        category.id,
+        1, // 只获取1条记录来获取poolName
+        undefined,
+        undefined
+      );
+      
+      if (response.list.length > 0) {
+        const firstRecord = response.list[0];
+        categoryPoolNames.value.set(category.id, firstRecord.poolName);
+      }
+    } catch (error) {
+      console.warn(`获取卡池 ${category.id} 的poolName失败:`, error);
+    }
+  });
+  
+  await Promise.all(promises);
 };
 
 // 生命周期
@@ -427,6 +822,59 @@ onMounted(() => {
   color: #666;
   cursor: not-allowed;
   border-color: #404040;
+}
+
+/* 导出加载提示样式 */
+.export-loading-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+}
+
+.export-loading-content {
+  background: #2d2d2d;
+  border: 1px solid #404040;
+  border-radius: 12px;
+  padding: 30px;
+  text-align: center;
+  max-width: 400px;
+  width: 90%;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+}
+
+.export-loading-spinner {
+  width: 50px;
+  height: 50px;
+  border: 4px solid #404040;
+  border-top: 4px solid #646cff;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin: 0 auto 20px;
+}
+
+.export-loading-content p {
+  margin: 8px 0;
+  color: #ccc;
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+.export-progress {
+  color: #646cff !important;
+  font-weight: 500;
+  font-size: 14px !important;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
 }
 
 /* 登录提示样式 */
@@ -500,11 +948,6 @@ onMounted(() => {
   border-radius: 50%;
   animation: spin 1s linear infinite;
   margin: 0 auto 16px;
-}
-
-@keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
 }
 
 .loading p, .error h3, .error p {
@@ -589,6 +1032,13 @@ onMounted(() => {
   font-family: monospace;
 }
 
+.category-poolname {
+  margin: 0;
+  color: #999;
+  font-size: 12px;
+  font-style: italic;
+}
+
 /* 记录表格样式 */
 .records-container {
   background: #2d2d2d;
@@ -655,11 +1105,11 @@ onMounted(() => {
   display: inline-block;
 }
 
-.rarity-2 { background: rgba(30, 64, 175, 0.2); color: #6495ed; }
-.rarity-3 { background: rgba(6, 95, 70, 0.2); color: #4caf50; }
-.rarity-4 { background: rgba(146, 64, 14, 0.2); color: #ffa726; }
-.rarity-5 { background: rgba(107, 33, 168, 0.2); color: #ba68c8; }
-.rarity-6 { background: rgba(153, 27, 27, 0.2); color: #ff6b6b; }
+.rarity-1 { background: rgba(155, 250, 100, 0.2); color: #85ff47; }
+.rarity-2 { background: rgba(39, 167, 226, 0.2); color: #419ce2; }
+.rarity-3 { background: rgba(162, 40, 238, 0.2); color: #8d7cff; }
+.rarity-4 { background: rgba(243, 229, 30, 0.2); color: #fffb18; }
+.rarity-5 { background: rgba(255, 150, 30, 0.2); color: #ff6b6b; }
 
 /* 分页控件 */
 .pagination {
@@ -757,6 +1207,119 @@ onMounted(() => {
   filter: brightness(0) saturate(100%) invert(42%) sepia(91%) saturate(1352%) hue-rotate(202deg) brightness(97%) contrast(89%);
 }
 
+/* 导出导入按钮样式 */
+.export-btn, .import-btn, .clear-btn {
+  padding: 10px 20px;
+  border: 1px solid #404040;
+  border-radius: 6px;
+  background: #3a3a3a;
+  color: #ccc;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.export-btn:hover:not(:disabled), .import-btn:hover, .export-merged-btn:hover {
+  background: #4a4a4a;
+  color: #ffffff;
+  border-color: #646cff;
+}
+
+.export-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  background: #2d2d2d;
+}
+
+.export-merged-btn {
+  padding: 10px 20px;
+  border: 1px solid #404040;
+  border-radius: 6px;
+  background: #2a5a2a;
+  color: #ccc;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.clear-btn:hover {
+  background: #4a4a4a;
+  color: #ff6b6b;
+  border-color: #ff6b6b;
+}
+
+/* 导入记录样式 */
+.imported-records {
+  background: #2d2d2d;
+  border-radius: 8px;
+  padding: 24px;
+  border: 1px solid #404040;
+  margin-top: 24px;
+}
+
+.imported-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #404040;
+}
+
+.imported-header h3 {
+  margin: 0;
+  color: #ffffff;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.imported-categories {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.imported-category {
+  background: #3a3a3a;
+  border: 1px solid #404040;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.imported-category h4 {
+  margin: 0;
+  padding: 16px 20px;
+  color: #ffffff;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  transition: background 0.2s;
+}
+
+.imported-category h4:hover {
+  background: #4a4a4a;
+}
+
+.toggle-icon {
+  font-size: 12px;
+  color: #999;
+  transition: transform 0.2s;
+}
+
+.imported-records-table {
+  border-top: 1px solid #404040;
+  overflow-x: auto;
+}
+
+.imported-records-table .gacha-table {
+  margin: 0;
+}
+
 /* 响应式设计 */
 @media (max-width: 768px) {
   .headhunting-record {
@@ -767,6 +1330,15 @@ onMounted(() => {
     flex-direction: column;
     gap: 16px;
     padding: 16px;
+  }
+  
+  .actions {
+    flex-direction: column;
+    width: 100%;
+  }
+  
+  .export-btn, .import-btn {
+    width: 100%;
   }
   
   .categories-grid {
@@ -791,6 +1363,12 @@ onMounted(() => {
   .pagination {
     flex-direction: column;
     gap: 12px;
+  }
+  
+  .imported-header {
+    flex-direction: column;
+    gap: 12px;
+    align-items: flex-start;
   }
 }
 </style>

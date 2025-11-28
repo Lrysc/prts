@@ -32,7 +32,7 @@ export default defineConfig({
           rewrite: (path) => path.replace(/^\/api\/hg/, ''),
           secure: true,
           configure: (proxy, _options) => {
-            proxy.on('proxyReq', (proxyReq, req) => {
+            proxy.on('proxyReq', (_proxyReq, req) => {
               console.log('HG代理请求:', req.method, req.url);
             });
             proxy.on('proxyRes', (proxyRes) => {
@@ -46,7 +46,7 @@ export default defineConfig({
           rewrite: (path) => path.replace(/^\/api\/binding/, ''),
           secure: true,
           configure: (proxy, _options) => {
-            proxy.on('proxyReq', (proxyReq, req) => {
+            proxy.on('proxyReq', (_proxyReq, req) => {
               console.log('Binding代理请求:', req.method, req.url);
             });
             proxy.on('proxyRes', (proxyRes) => {
@@ -85,7 +85,7 @@ export default defineConfig({
           rewrite: (path) => path.replace(/^\/api\/ak/, ''),
           secure: true,
           configure: (proxy, _options) => {
-            proxy.on('proxyReq', (proxyReq, req) => {
+            proxy.on('proxyReq', (_proxyReq, req) => {
               console.log('AK代理请求:', req.method, req.url);
             });
             proxy.on('proxyRes', (proxyRes, req, res) => {
@@ -93,7 +93,7 @@ export default defineConfig({
               console.log('AK代理Set-Cookie:', proxyRes.headers['set-cookie']);
               
               // 如果是角色登录接口且有Set-Cookie头，将cookie添加到响应体中
-              if (req.url.includes('/user/api/role/login') && proxyRes.headers['set-cookie']) {
+              if (req.url && req.url.includes('/user/api/role/login') && proxyRes.headers['set-cookie']) {
                 const cookies = proxyRes.headers['set-cookie'];
                 const akUserCenterCookie = cookies.find(cookie => cookie.includes('ak-user-center='));
                 

@@ -9,6 +9,15 @@
   font-display: swap;
 }
 
+/* 定义happyheroes字体 */
+@font-face {
+  font-family: 'HappyHeroes';
+  src: url('./happyheroes.otf') format('opentype');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
 /* 重置默认样式 */
 * {
   margin: 0;

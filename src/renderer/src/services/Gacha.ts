@@ -201,7 +201,6 @@ export const roleLogin = async (token: string): Promise<string> => {
   }
   
   // 临时解决方案：使用一个固定的cookie值进行测试
-  console.warn('无法获取cookie，使用临时解决方案');
   // 这里使用gachaAPI.md中的示例cookie值进行测试
   const tempCookie = 'TTuIkHeVJ2pRzI7x5rkcFa%2BaeCz%2FCBzjNPdb5bHK0pSntD2ZBfNibkQoAaKMxjKXKq1ZJrJW4z3cJr6dv9tymmjF%2FzAHumDC5TLCxXPt5XI4R%2FWkUs8EDCR7ZZk61hf1TGdl9kZC6epOBd7D16W93%2B0vfoNd48DpGS5BWjTJsl3UyDmWd9%2F2DoRWWkPvl5vp5PJACyySMa9Q1odhhOe1qHBTTv2teIJSUEajX4rJsmDP%2FXwP7O%2F2uV1wSAwRJYlFWG%2FOmcBBPAqYVY86cKWIukZalqXeMnBPkJHPbcthBiqwelPaqCYXnujodNXv021obOSiUCDbd4QCOWm34yG6rHGpVjCfIUqREQLwkMV2xxnJXYF3YWcikhvEn8EZNEFI%2BVbQSEhgQD9ord86kROp9jnKKviCcq1nkGUYK4U1QYk%3D';
   
@@ -273,5 +272,27 @@ export const getGachaHistory = async (
   });
 
   const data = await handleApiResponse(response, '获取抽卡记录');
+  console.log('getGachaHistory 完整响应 data:', data);
+  console.log('getGachaHistory 返回的 data.data:', data.data);
+  
+  // 检查 data.data 是否存在且包含必要字段
+  if (!data.data) {
+    console.error('getGachaHistory data.data 为空:', data.data);
+    // 返回一个默认的空结构，而不是抛出错误
+    return {
+      list: [],
+      hasMore: false
+    };
+  }
+  
+  // 如果 data.data 不是预期的格式，尝试直接返回
+  if (!data.data.hasOwnProperty('list') || !data.data.hasOwnProperty('hasMore')) {
+    console.warn('getGachaHistory data.data 格式异常，可能为空响应:', data.data);
+    return {
+      list: [],
+      hasMore: false
+    };
+  }
+  
   return data.data;
 };

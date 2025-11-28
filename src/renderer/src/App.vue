@@ -409,7 +409,7 @@ const componentMap: Record<string, any> = {
     <header class="app-header">
       <div class="header-left">
         <img alt="logo" class="logo" src="@assets/logo_rhodes_island.svg" />
-        <h1>PRTS系统</h1>
+        <h1>ZOOT备用系统</h1>
       </div>
 
       <!-- 用户图标放在右侧 -->
@@ -759,11 +759,11 @@ body {
 /* MENU 标签样式（调整位置、大小和颜色） */
 .menu-label {
   position: absolute;
-  top: 10px; /* 上移位置 */
-  left: 15px; /* 左移位置 */
+  top: 60px; /* 上移位置 */
+  left: 22px; /* 左移位置 */
   font-size: 50px; /* 增大字体 */
   font-weight: 900; /* 加粗 */
-  font-family: 'Microsoft YaHei', sans-serif;
+  font-family: 'HappyHeroes', 'Microsoft YaHei', sans-serif;
   color: #44485a; /* 灰色 */
   letter-spacing: 2px;
   text-transform: uppercase;
@@ -800,7 +800,7 @@ body {
   cursor: pointer;
   transition: all 0.3s ease;
   font-size: 15px;
-  color: #c0c6e0;
+  color: #ffffff;
   font-weight: 500;
   position: relative;
   overflow: hidden;

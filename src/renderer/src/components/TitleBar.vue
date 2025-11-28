@@ -1,7 +1,7 @@
 <template>
   <div class="title-bar">
     <div class="title-bar-left">
-<!--      <div class="app-title">PRTS系统</div>-->
+      <!--      <div class="app-title">ZOOT备用系统</div>-->
     </div>
     <div class="title-bar-right">
       <button class="title-bar-btn minimize-btn" @click="minimizeWindow" title="最小化">

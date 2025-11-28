@@ -63,7 +63,7 @@ class LoggerService {
    * 应用信息
    */
   private readonly APP_INFO = {
-    name: 'PRTS系统助手',
+    name: 'ZOOT备用系统',
     version: packageJson.version || ''
   };
 
@@ -318,7 +318,7 @@ class LoggerService {
   exportLogs(): string {
     const meta = this.getExportMeta();
 
-    let logText = '=== PRTS系统助手 - 应用日志 ===\n\n';
+    let logText = '=== ZOOT备用系统 - 应用日志 ===\n\n';
 
     // 元信息部分
     logText += '【系统信息】\n';

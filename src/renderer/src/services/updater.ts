@@ -80,7 +80,7 @@ class UpdaterService {
       const response = await fetch(this.GITHUB_API_URL, {
         headers: {
           'Accept': 'application/vnd.github.v3+json',
-          'User-Agent': 'PRTS-System-Updater'
+          'User-Agent': 'ZOOT-System-Updater'
         },
         
       })

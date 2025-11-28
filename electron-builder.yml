@@ -1,6 +1,6 @@
 {
-  "appId": "com.prts.app",
-  "productName": "prts",
+  "appId": "com.zoot.app",
+  "productName": "zoot",
   "directories": {
     "output": "dist",
     "buildResources": "build"
@@ -17,7 +17,7 @@
     "resources/**"
   ],
   "win": {
-    "executableName": "prts",
+    "executableName": "zoot",
     "target": [
       {
         "target": "nsis",
