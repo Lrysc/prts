@@ -318,7 +318,10 @@ class LoggerService {
   exportLogs(): string {
     const meta = this.getExportMeta();
 
-    let logText = '=== ZOOT备用系统 - 应用日志 ===\n\n';
+    let logText = '╔══════════════════════════════════════════════════════════════╗\n';
+    logText += '║                    ZOOT备用系统 - 应用日志                    ║\n';
+    logText += '║                  明日方舟寻访记录管理工具                      ║\n';
+    logText += '╚══════════════════════════════════════════════════════════════╝\n\n';
 
     // 元信息部分
     logText += '【系统信息】\n';
@@ -364,6 +367,23 @@ class LoggerService {
 
       logText += '-'.repeat(60) + '\n';
     });
+
+    // 页脚信息
+    logText += '\
+' + '═'.repeat(65) + '\
+';
+    logText += '【导出说明】\
+';
+    logText += '• 本日志文件由 ZOOT备用系统 自动生成\
+';
+    logText += '• 包含系统运行期间的所有重要操作记录\
+';
+    logText += '• 如需技术支持，请提供此日志文件\
+';
+    logText += '• 项目地址: https://github.com/Lrysc/prts\
+';
+    logText += '═'.repeat(65) + '\
+';
 
     return logText;
   }
@@ -895,6 +915,79 @@ class LoggerService {
     }
     
     return suggestions;
+  }
+
+  /**
+   * 获取日志级别图标
+   * @param level - 日志级别
+   * @returns 对应的图标字符
+   */
+  private getLevelIcon(level: LogLevel): string {
+    const icons = {
+      [LogLevel.DEBUG]: '🔍',
+      [LogLevel.INFO]: 'ℹ️',
+      [LogLevel.WARN]: '⚠️',
+      [LogLevel.ERROR]: '❌'
+    };
+    return icons[level] || '📝';
+  }
+
+  /**
+   * 获取功能模块使用统计
+   * @returns 各功能模块的使用次数统计
+   */
+  private getModuleUsageStats(): Record<string, number> {
+    const moduleStats: Record<string, number> = {
+      '用户认证': 0,
+      '寻访记录': 0,
+      '数据导入': 0,
+      '数据导出': 0,
+      '游戏数据': 0,
+      '公开招募': 0,
+      '材料规划': 0,
+      '系统操作': 0
+    };
+
+    this.logs.forEach((entry: LogEntry) => {
+      const message = entry.message.toLowerCase();
+      
+      if (message.includes('登录') || message.includes('认证') || message.includes('auth')) {
+        moduleStats['用户认证']++;
+      } else if (message.includes('寻访') || message.includes('抽卡') || message.includes('gacha')) {
+        moduleStats['寻访记录']++;
+      } else if (message.includes('导入') || message.includes('import')) {
+        moduleStats['数据导入']++;
+      } else if (message.includes('导出') || message.includes('export')) {
+        moduleStats['数据导出']++;
+      } else if (message.includes('游戏数据') || message.includes('干员') || message.includes('角色')) {
+        moduleStats['游戏数据']++;
+      } else if (message.includes('招募') || message.includes('公招')) {
+        moduleStats['公开招募']++;
+      } else if (message.includes('材料') || message.includes('合成')) {
+        moduleStats['材料规划']++;
+      } else if (message.includes('系统') || message.includes('配置') || message.includes('设置')) {
+        moduleStats['系统操作']++;
+      }
+    });
+
+    // 移除使用次数为0的模块
+    Object.keys(moduleStats).forEach(key => {
+      if (moduleStats[key] === 0) {
+        delete moduleStats[key];
+      }
+    });
+
+    return moduleStats;
+  }
+
+  /**
+   * 获取最近的错误日志
+   * @param count - 要获取的错误数量
+   * @returns 最近的错误日志数组
+   */
+  private getRecentErrors(count: number = 5): LogEntry[] {
+    const errorLogs = this.logs.filter((entry: LogEntry) => entry.level === LogLevel.ERROR);
+    return errorLogs.slice(-count);
   }
 }
 
