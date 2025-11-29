@@ -7,6 +7,7 @@
           <select v-model="exportFormat" class="format-select" title="选择导出格式">
             <option value="native">原始格式</option>
             <option value="universal">通用格式</option>
+            <option value="official">官方兼容格式</option>
           </select>
           <button @click="exportGachaData" class="export-btn" title="导出寻访记录" :disabled="exportLoading">
             {{ exportLoading ? '导出中...' : '导出记录' }}
@@ -266,7 +267,7 @@ const error = ref<string | null>(null);
 // 导出加载状态
 const exportLoading = ref(false);
 const exportProgress = ref('');
-const exportFormat = ref<'native' | 'universal'>('native');
+const exportFormat = ref<'native' | 'universal' | 'official'>('native');
 
 // 数据状态变量
 const categories = ref<GachaCategory[]>([]);
@@ -663,35 +664,63 @@ const getRarityText = (rarity: number) => {
   return rarityMap[rarity] || `${rarity}星`;
 };
 
-const formatTime = (timestamp: string) => {
+const formatTime = (timestamp: string | number) => {
+  // 调试信息
+  logger.debug('格式化时间戳', {
+    timestamp: timestamp,
+    type: typeof timestamp
+  });
+
   // 处理不同格式的时间戳
   let date: Date;
+  let ts: number;
 
-  // 处理字符串格式的毫秒时间戳
-  if (/^\d{13}$/.test(timestamp)) {
-    date = new Date(parseInt(timestamp));
+  // 统一转换为数字
+  if (typeof timestamp === 'string') {
+    ts = parseFloat(timestamp);
+  } else {
+    ts = timestamp;
   }
-  // 处理字符串格式的秒时间戳
-  else if (/^\d{10}$/.test(timestamp)) {
-    date = new Date(parseInt(timestamp) * 1000);
+
+  // 检查是否为有效数字
+  if (isNaN(ts)) {
+    logger.warn('无效的时间戳格式', { timestamp });
+    return '时间格式错误';
   }
-  // 如果是数字类型
-  else if (typeof timestamp === 'number') {
-    // 判断是毫秒还是秒
-    date = timestamp > 1000000000000 ? new Date(timestamp) : new Date(timestamp * 1000);
-  }
-  // 默认尝试直接解析
-  else {
-    date = new Date(timestamp);
+
+  // 判断是毫秒还是秒时间戳
+  // 10位数 = 秒级（约1973-2286年）
+  // 13位数 = 毫秒级（约1970-2286年）
+  if (ts > 1000000000000) {
+    // 毫秒级时间戳
+    date = new Date(ts);
+    logger.debug('使用毫秒级时间戳', { timestamp, parsedDate: date.toISOString() });
+  } else if (ts > 1000000000) {
+    // 秒级时间戳，转换为毫秒
+    date = new Date(ts * 1000);
+    logger.debug('使用秒级时间戳', { timestamp, parsedDate: date.toISOString() });
+  } else {
+    logger.warn('时间戳超出合理范围', { timestamp });
+    return '时间戳异常';
   }
 
   // 检查日期是否有效
   if (isNaN(date.getTime())) {
-    console.warn('无效的时间戳:', timestamp);
-    return '时间格式错误';
+    logger.warn('无效的日期', { timestamp, date });
+    return '日期无效';
   }
 
-  return date.toLocaleString('zh-CN', {
+  // 检查日期是否合理（不能是未来时间，不能太早）
+  const now = Date.now();
+  const minDate = new Date('2020-01-01').getTime();
+  
+  if (date.getTime() > now) {
+    logger.warn('时间戳是未来时间', { timestamp, date: date.toISOString() });
+  } else if (date.getTime() < minDate) {
+    logger.warn('时间戳过早', { timestamp, date: date.toISOString() });
+  }
+
+  const formatted = date.toLocaleString('zh-CN', {
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
@@ -699,6 +728,9 @@ const formatTime = (timestamp: string) => {
     minute: '2-digit',
     second: '2-digit'
   });
+
+  logger.debug('时间戳格式化完成', { timestamp, formatted });
+  return formatted;
 };
 
 const getPoolNameForCategory = (categoryId: string) => {
@@ -726,6 +758,88 @@ const verifyRSASignature = (data: string, signature: string, publicKey: string):
   // 简化验证逻辑，实际应使用RSA验证
   const expectedSignature = generateRSASignature(data, publicKey);
   return signature === expectedSignature;
+};
+
+// 根据poolId映射到ci字段
+const mapPoolIdToCi = (poolId: string): string => {
+  if (!poolId) return '';
+  
+  if (poolId.startsWith('LINKAGE_')) {
+    return 'mujica';
+  } else if (poolId.startsWith('SINGLE_') || poolId.startsWith('NORM_') || poolId.startsWith('SPECIAL_')) {
+    return 'normal';
+  } else if (poolId.startsWith('LIMITED_')) {
+    return 'anniver_fest';
+  } else if (poolId.startsWith('CLASSIC_') || poolId.startsWith('FESCLASSIC_')) {
+    return 'classic';
+  } else if (poolId.startsWith('CLASSIC_DOUBLE_')) {
+    return 'classic';
+  }
+  
+  // 默认返回poolId的前6个字符，或者直接返回poolId
+  return poolId.length > 6 ? poolId.substring(0, 6) : poolId;
+};
+
+// 转换为官方兼容格式
+const convertToOfficialFormat = (rawDataExport: any) => {
+  const officialData: any = {};
+
+  // 处理所有卡池分类，生成与官方格式完全一致的数据
+  rawDataExport.categories.forEach((category: any) => {
+    if (category.mergedData && category.mergedData.data && category.mergedData.data.list) {
+      // 按时间戳分组，将同一时间戳的记录合并为一次抽卡
+      const recordsByTimestamp = new Map<string, any[]>();
+      
+      category.mergedData.data.list.forEach((record: any) => {
+        const timestamp = record.gachaTs;
+        if (!recordsByTimestamp.has(timestamp)) {
+          recordsByTimestamp.set(timestamp, []);
+        }
+        recordsByTimestamp.get(timestamp)!.push(record);
+      });
+
+      // 为每个时间戳创建官方格式的记录
+      recordsByTimestamp.forEach((records, timestamp) => {
+        let ts = parseFloat(timestamp);
+        
+        // 如果时间戳是毫秒级，转换为秒级
+        if (ts > 1000000000000) {
+          ts = ts / 1000;
+        }
+        
+        // 转换回字符串以保持与官方格式一致，保留小数部分
+        const timestampStr = ts.toString();
+        
+        // 保持原始的换行符，与官方格式一致
+        const poolName = category.categoryInfo.name;
+        
+        // 构建角色数组
+        const characters: any[][] = [];
+        records.forEach(record => {
+          if (record.charName) {
+            characters.push([record.charName, record.rarity, record.isNew ? 1 : 0]);
+          }
+        });
+
+        // 创建官方格式记录
+        // 按官方顺序创建记录对象：p, pi, c, cn, ci, pos
+        const record: any = {};
+        record.p = records[0]?.poolName || poolName.replace('\
+\
+', ''); // p字段使用实际的poolName
+        record.pi = records[0]?.poolId || category.categoryInfo.id || ''; // pi字段使用实际的poolId
+        record.c = characters; // 包含所有角色的数组
+        record.cn = poolName; // cn字段保持原始换行符
+        // ci字段可能需要特殊映射，暂时使用categoryInfo.id
+        record.ci = mapPoolIdToCi(records[0]?.poolId || category.categoryInfo.id || '');
+        record.pos = records[0]?.pos || 0;
+        
+        officialData[timestampStr] = record;
+      });
+    }
+  });
+
+  return officialData;
 };
 
 // 转换为通用格式
@@ -984,6 +1098,18 @@ const exportGachaData = async () => {
         dataKeysCount: Object.keys(finalData.data).length,
         uid: finalData.info.uid
       });
+    } else if (exportFormat.value === 'official') {
+      // 官方兼容格式导出
+      finalData = convertToOfficialFormat(rawDataExport);
+      // 使用与官方文件完全一致的命名格式：时间戳_official_UID前8位_gacha.json
+      fileName = `${new Date().getTime()}_official_${uid.substring(0, 8)}_gacha.json`;
+      formatDescription = '官方兼容格式';
+
+      logger.debug('生成官方兼容格式文件', {
+        fileName: fileName,
+        dataKeysCount: Object.keys(finalData).length,
+        uid: uid.substring(0, 8) + '...'
+      });
     } else {
       // 原始格式导出
       finalData = rawDataExport;
@@ -997,7 +1123,10 @@ const exportGachaData = async () => {
     }
 
     // 创建并下载JSON文件
-    const dataStr = JSON.stringify(finalData);
+    // 官方兼容格式使用紧凑JSON，其他格式使用格式化JSON
+    const dataStr = exportFormat.value === 'official' 
+      ? JSON.stringify(finalData) 
+      : JSON.stringify(finalData, null, 2);
     const dataBlob = new Blob([dataStr], { type: 'application/json' });
     const url = URL.createObjectURL(dataBlob);
 
@@ -1072,6 +1201,18 @@ const importGachaData = () => {
 
         const data = JSON.parse(fileContent);
 
+        // 调试：输出文件结构信息
+        logger.debug('解析的文件结构', {
+          dataType: typeof data,
+          hasInfo: !!(data && typeof data === 'object' && data.info),
+          hasData: !!(data && typeof data === 'object' && data.data),
+          hasCategories: !!(data && typeof data === 'object' && data.categories),
+          isArray: Array.isArray(data),
+          dataKeys: data && typeof data === 'object' ? Object.keys(data) : [],
+          infoKeys: data && typeof data === 'object' && data.info ? Object.keys(data.info) : [],
+          dataKeysCount: data && typeof data === 'object' && data.data ? Object.keys(data.data).length : 0
+        });
+
         // 检查是否是通用格式（包含info和data字段的对象）
         if (data && typeof data === 'object' && data.info && data.data && typeof data.data === 'object') {
           // 验证RSA签名
@@ -1118,6 +1259,7 @@ const importGachaData = () => {
             uid: data.info.uid,
             lang: data.info.lang,
             exportTime: data.info.export_time,
+            exportApp: data.info.export_app,
             dataKeysCount: Object.keys(data.data).length
           });
 
@@ -1130,7 +1272,7 @@ const importGachaData = () => {
               if (!categoryMap.has(poolName)) {
                 categoryMap.set(poolName, {
                   categoryName: poolName,
-                  categoryId: `imported_${poolName}`,
+                  categoryId: recordInfo.ci || `imported_${poolName}`,
                   records: []
                 });
               }
@@ -1142,10 +1284,10 @@ const importGachaData = () => {
                   charName: charName,
                   rarity: rarity,
                   isNew: isNew === 1,
-                  gachaTs: timestamp,
-                  poolId: '',
+                  gachaTs: timestamp, // 保持字符串格式，与API一致
+                  poolId: recordInfo.pi || '',
                   poolName: poolName,
-                  pos: 0
+                  pos: recordInfo.pos || 0
                 });
               });
             }
