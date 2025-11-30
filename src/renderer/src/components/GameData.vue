@@ -142,8 +142,45 @@
             <span class="sub-value" v-else-if="gameDataStore.getLaborCount">已回满</span>
           </li>
           <li class="data-item training-item">
-            <span class="label">训练室</span>
-            <span class="value training-value">{{ gameDataStore.getTrainingSimpleStatus || '--' }}</span>
+            <div class="training-header">
+              <span class="training-title">训练室</span>
+            </div>
+            <div class="training-container">
+              <div class="training-left">
+                <div class="operator-info" v-if="gameDataStore.getTrainingDetails?.trainee">
+                  <img 
+                    :src="getOperatorAvatarUrl(gameDataStore.getTrainingDetails.traineeCharId)" 
+                    :alt="gameDataStore.getTrainingDetails.trainee"
+                    class="training-avatar"
+                    @error="handleOperatorImageError(gameDataStore.getTrainingDetails.traineeCharId, 'avatar', $event)"
+                  />
+                  <span class="operator-name">{{ gameDataStore.getTrainingDetails.trainee }}</span>
+                  <span class="operator-role">训练干员</span>
+                </div>
+                <div class="no-operator" v-else>
+                  <div class="empty-avatar">?</div>
+                  <span class="operator-name">无训练干员</span>
+                  <span class="operator-role">训练干员</span>
+                </div>
+              </div>
+              <div class="training-right">
+                <div class="operator-info" v-if="gameDataStore.getTrainingDetails?.trainer">
+                  <img 
+                    :src="getOperatorAvatarUrl(gameDataStore.getTrainingDetails.trainerCharId)" 
+                    :alt="gameDataStore.getTrainingDetails.trainer"
+                    class="training-avatar"
+                    @error="handleOperatorImageError(gameDataStore.getTrainingDetails.trainerCharId, 'avatar', $event)"
+                  />
+                  <span class="operator-name">{{ gameDataStore.getTrainingDetails.trainer }}</span>
+                  <span class="operator-role">协助者</span>
+                </div>
+                <div class="no-operator" v-else>
+                  <div class="empty-avatar">?</div>
+                  <span class="operator-name">无协助干员</span>
+                  <span class="operator-role">协助者</span>
+                </div>
+              </div>
+            </div>
           </li>
         </ul>
       </div>
@@ -187,6 +224,38 @@ const authStore = useAuthStore();
  * 负责游戏数据的获取、缓存、格式化等操作
  */
 const gameDataStore = useGameDataStore();
+
+// ==================== 头像获取方法 ====================
+
+/**
+ * 获取干员头像URL
+ * @param charId 干员ID
+ * @returns 头像URL
+ */
+const getOperatorAvatarUrl = (charId: string): string => {
+  if (!charId || !charId.startsWith('char_')) return '';
+  try {
+    const baseUrl = 'https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar';
+    const avatarFileName = charId;
+    const avatarUrl = `${baseUrl}/${avatarFileName}.png`;
+    return avatarUrl;
+  } catch (error) {
+    console.error('生成干员头像URL失败', { charId, error });
+    return '';
+  }
+};
+
+/**
+ * 处理干员图片加载错误
+ * @param charId 干员ID
+ * @param type 图片类型
+ * @param event 错误事件
+ */
+const handleOperatorImageError = (charId: string, type: string, event: Event): void => {
+  const imgElement = event.target as HTMLImageElement;
+  console.warn('干员图片加载失败', { charId, type, imgSrc: imgElement.src });
+  imgElement.style.display = 'none';
+};
 
 // ==================== 注入全局刷新方法 ====================
 /**
@@ -754,12 +823,103 @@ defineExpose({
 
 /* 训练室特殊样式 */
 .training-item {
-  min-height: 60px;
+  min-height: 140px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
-.training-value {
-  white-space: pre-line;
-  line-height: 1.4;
+.training-header {
+  display: flex;
+  align-items: flex-start;
+  width: 100%;
+}
+
+.training-title {
+  font-size: 14px;
+  color: #999;
+  font-weight: 500;
+  margin-bottom: 4px;
+}
+
+.training-container {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  flex: 1;
+}
+
+.training-left,
+.training-right {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+}
+
+.operator-info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.no-operator {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.training-avatar {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  border: 2px solid #444;
+  object-fit: cover;
+  transition: transform 0.2s ease, border-color 0.2s ease;
+}
+
+.training-avatar:hover {
+  transform: scale(1.1);
+  border-color: #9feaf9;
+}
+
+.empty-avatar {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  border: 2px dashed #666;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  font-weight: bold;
+  color: #666;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.operator-name {
+  font-size: 12px;
+  color: #ccc;
+  text-align: center;
+  max-width: 70px;
+  word-wrap: break-word;
+  line-height: 1.2;
+}
+
+.operator-role {
+  font-size: 10px;
+  color: #888;
+  text-align: center;
+  padding: 1px 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.05);
+  font-weight: 400;
+  opacity: 0.8;
 }
 
 .sub-value {

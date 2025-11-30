@@ -1540,9 +1540,15 @@ export const useGameDataStore = defineStore('gameData', () => {
     try {
       const trainingInfo = getTrainingInfo.value;
       if (trainingInfo.isNull) return null;
+      
+      // 获取原始训练数据以获取charId
+      const trainingData = playerData.value?.building?.training;
+      
       return {
         trainee: trainingInfo.trainee,
         trainer: trainingInfo.trainer,
+        traineeCharId: trainingData?.trainee?.charId || '',
+        trainerCharId: trainingData?.trainer?.charId || '',
         profession: trainingInfo.profession,
         targetSkill: trainingInfo.targetSkill,
         status: trainingInfo.status,
