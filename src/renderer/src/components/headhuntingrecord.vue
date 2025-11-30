@@ -69,15 +69,23 @@
     <!-- 卡池列表 -->
     <div v-else-if="!selectedCategory && categories.length > 0" class="categories-list">
       <h3>选择卡池类型</h3>
-      <div class="categories-grid">
+      <div class="categories-horizontal">
         <div
           v-for="category in categories"
           :key="category.id"
-          class="category-card"
+          class="category-card-horizontal"
           @click="selectCategory(category)"
         >
-          <h4>{{ category.name.replace('\n', ' ') }}</h4>
-          <p class="category-poolname">{{ getPoolNameForCategory(category.id) }}</p>
+          <div class="category-info">
+            <div class="category-type-name">
+              <h4>{{ category.name.replace('\n', ' ') }}</h4>
+              <p class="category-poolname">{{ getPoolNameForCategory(category.id) }}</p>
+            </div>
+            <div class="category-count">
+              <span class="count-number">{{ getRecordCountForCategory(category.id) }}</span>
+              <span class="count-label">抽</span>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -301,6 +309,7 @@ const categories = ref<GachaCategory[]>([]);
 const selectedCategory = ref<GachaCategory | null>(null);
 const gachaRecords = ref<GachaRecord[]>([]);
 const categoryPoolNames = ref<Map<string, string>>(new Map());
+const categoryRecordCounts = ref<Map<string, number>>(new Map());
 
 // 导入数据状态变量 - 重构为支持多文件
 const importedData = ref<Array<{
@@ -804,6 +813,10 @@ const formatFileSize = (bytes: number) => {
 
 const getPoolNameForCategory = (categoryId: string) => {
   return categoryPoolNames.value.get(categoryId) || '';
+};
+
+const getRecordCountForCategory = (categoryId: string) => {
+  return categoryRecordCounts.value.get(categoryId) || 0;
 };
 
 // 根据poolId映射到ci字段
@@ -1765,53 +1778,101 @@ const loadAllPoolNames = async (
   accountToken: string,
   categoryList: GachaCategory[]
 ) => {
-  logger.info('开始预获取所有卡池的poolName', {
+  logger.info('开始预获取所有卡池的poolName和记录数', {
     categoriesCount: categoryList.length
   });
 
   const promises = categoryList.map(async (category, index) => {
     try {
-      logger.debug(`获取卡池${index + 1}/${categoryList.length}的poolName`, {
+      logger.debug(`获取卡池${index + 1}/${categoryList.length}的详细信息`, {
         categoryId: category.id,
         categoryName: category.name
       });
 
-      const response = await logger.performanceAsync(`获取卡池${category.id}的poolName`, async () => {
-        return await getGachaHistory(
-          uid,
-          cookie,
-          roleToken,
-          accountToken,
-          category.id,
-          1, // 只获取一条记录来获取poolName
-          undefined,
-          undefined
-        );
-      });
+      // 先获取记录总数
+      let recordCount = 0;
+      try {
+        const countResponse = await logger.performanceAsync(`获取卡池${category.id}的记录数`, async () => {
+          return await getGachaHistory(
+            uid,
+            cookie,
+            roleToken,
+            accountToken,
+            category.id,
+            1, // 先获取1条看看是否有数据
+            undefined,
+            undefined
+          );
+        });
 
-      if (response.list.length > 0) {
-        const firstRecord = response.list[0];
-        categoryPoolNames.value.set(category.id, firstRecord.poolName);
-        logger.debug(`卡池${category.id}的poolName获取成功`, {
-          poolName: firstRecord.poolName,
+        if (countResponse.list.length > 0) {
+          // 如果有数据，再获取更多数据来计算总数
+          let allRecords: any[] = [...countResponse.list];
+          let currentPos = countResponse.list[countResponse.list.length - 1]?.pos;
+          let currentTs = countResponse.list[countResponse.list.length - 1]?.gachaTs;
+          let hasMore = countResponse.hasMore;
+
+          // 继续获取所有数据来计算总数
+          while (hasMore && allRecords.length < 100) { // 限制最多获取100条来计算总数，避免请求过多
+            const moreResponse = await getGachaHistory(
+              uid,
+              cookie,
+              roleToken,
+              accountToken,
+              category.id,
+              10,
+              currentPos,
+              currentTs
+            );
+
+            if (moreResponse.list && moreResponse.list.length > 0) {
+              allRecords.push(...moreResponse.list);
+              hasMore = moreResponse.hasMore;
+              currentPos = moreResponse.list[moreResponse.list.length - 1]?.pos;
+              currentTs = moreResponse.list[moreResponse.list.length - 1]?.gachaTs;
+            } else {
+              hasMore = false;
+            }
+          }
+
+          recordCount = allRecords.length;
+          
+          // 设置poolName
+          const firstRecord = countResponse.list[0];
+          categoryPoolNames.value.set(category.id, firstRecord.poolName);
+        } else {
+          // 没有记录
+          recordCount = 0;
+        }
+      } catch (countError) {
+        logger.warn(`获取卡池${category.id}的记录数失败`, {
+          error: countError instanceof Error ? countError.message : '未知错误',
           categoryId: category.id
         });
-      } else {
-        logger.warn(`卡池${category.id}无记录，无法获取poolName`, {
-          categoryId: category.id,
-          categoryName: category.name
-        });
+        recordCount = 0;
       }
+
+      // 设置记录数
+      categoryRecordCounts.value.set(category.id, recordCount);
+
+      logger.debug(`卡池${category.id}的详细信息获取成功`, {
+        categoryId: category.id,
+        recordCount: recordCount,
+        poolName: categoryPoolNames.value.get(category.id)
+      });
+
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : '未知错误';
-      logger.error(`获取卡池 ${category.id} 的poolName失败`, {
+      logger.error(`获取卡池 ${category.id} 的详细信息失败`, {
         error: errorMessage,
         stack: error instanceof Error ? error.stack : undefined,
         categoryId: category.id,
         categoryName: category.name
       });
 
-      console.warn(`获取卡池 ${category.id} 的poolName失败:`, error);
+      console.warn(`获取卡池 ${category.id} 的详细信息失败:`, error);
+      // 设置默认值
+      categoryRecordCounts.value.set(category.id, 0);
     }
   });
 
@@ -1819,11 +1880,13 @@ const loadAllPoolNames = async (
   const successful = results.filter(r => r.status === 'fulfilled').length;
   const failed = results.filter(r => r.status === 'rejected').length;
 
-  logger.info('卡池poolName预获取完成', {
+  logger.info('卡池详细信息预获取完成', {
     totalCategories: categoryList.length,
     successful: successful,
     failed: failed,
-    successRate: `${((successful / categoryList.length) * 100).toFixed(1)}%`
+    successRate: `${((successful / categoryList.length) * 100).toFixed(1)}%`,
+    poolNamesCount: categoryPoolNames.value.size,
+    recordCountsCount: categoryRecordCounts.value.size
   });
 };
 
@@ -2103,10 +2166,10 @@ onMounted(() => {
   font-weight: 600;
 }
 
-.categories-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-  gap: 16px;
+.categories-horizontal {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .category-card {
@@ -2124,6 +2187,63 @@ onMounted(() => {
   background: #4a4a4a;
   transform: translateY(-2px);
   box-shadow: 0 4px 12px rgba(100, 108, 255, 0.15);
+}
+
+.category-card-horizontal {
+  background: #3a3a3a;
+  border: 1px solid #404040;
+  border-radius: 8px;
+  padding: 16px 20px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.category-card-horizontal:hover {
+  border-color: #646cff;
+  background: #4a4a4a;
+}
+
+.category-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+}
+
+.category-type-name {
+  flex: 1;
+  text-align: left;
+}
+
+.category-type-name h4 {
+  margin: 0 0 4px 0;
+  color: #ffffff;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.category-type-name p {
+  margin: 0;
+  color: #ccc;
+  font-size: 14px;
+}
+
+.category-count {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  text-align: right;
+}
+
+.count-number {
+  font-size: 18px;
+  font-weight: 600;
+  color: #646cff;
+}
+
+.count-label {
+  font-size: 12px;
+  color: #999;
 }
 
 .category-card h4 {
@@ -2622,8 +2742,26 @@ onMounted(() => {
     width: 100%;
   }
 
-  .categories-grid {
-    grid-template-columns: 1fr;
+  .categories-horizontal {
+    gap: 8px;
+  }
+
+  .category-card-horizontal {
+    padding: 12px 16px;
+  }
+
+  .category-info {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .category-type-name {
+    width: 100%;
+  }
+
+  .category-count {
+    align-self: flex-end;
   }
 
   .records-header {
