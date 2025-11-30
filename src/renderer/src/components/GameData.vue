@@ -50,16 +50,24 @@
         <h3 class="section-title">--- 实时数据 ---</h3>
         <ul class="data-grid">
           <li class="data-item">
-            <span class="label">理智</span>
-            <span class="ap-value">
+            <div class="ap-container">
+              <div class="ap-left-section">
+                <span class="label">理智</span>
+                <div class="ap-recovery-info">
+                  <span class="sub-value" v-if="gameDataStore.getActualApInfo?.remainSecs > 0">
+                    {{ gameDataStore.formatRecoveryTime(gameDataStore.getActualApInfo?.recoverTime) }} 回满
+                  </span>
+                  <span class="sub-value" v-else-if="gameDataStore.getActualApInfo">已回满</span>
+                </div>
+              </div>
+              <div class="ap-value-container">
+                <span class="ap-value">
               <span class="current-ap">{{ gameDataStore.getActualApInfo?.current || '--' }}</span>
               <span class="ap-separator">/</span>
               <span class="max-ap">{{ gameDataStore.getActualApInfo?.max || '--' }}</span>
             </span>
-            <span class="sub-value" v-if="gameDataStore.getActualApInfo?.remainSecs > 0">
-              {{ gameDataStore.formatRecoveryTime(gameDataStore.getActualApInfo?.recoverTime) }} 回满
-            </span>
-            <span class="sub-value" v-else-if="gameDataStore.getActualApInfo">已回满</span>
+              </div>
+            </div>
           </li>
           <li class="data-item">
             <span class="label">剿灭作战</span>
@@ -575,6 +583,12 @@ defineExpose({
   font-weight: 500;
 }
 
+/* 理智标题加大 */
+.ap-container .label {
+  font-size: 16px;
+  font-weight: 600;
+}
+
 .value {
   font-size: 16px;
   color: #ccc;
@@ -582,6 +596,26 @@ defineExpose({
 }
 
 /* 理智特殊样式 */
+.ap-container {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+}
+
+.ap-left-section {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.ap-value-container {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
 .ap-value {
   display: flex;
   align-items: center;
@@ -589,26 +623,33 @@ defineExpose({
 }
 
 .current-ap {
-  font-size: 20px;
+  font-size: 40px;
   font-weight: 700;
   color: #9feaf9;
 }
 
 .ap-separator {
-  font-size: 16px;
+  font-size: 32px;
   color: #999;
   margin: 0 2px;
 }
 
 .max-ap {
-  font-size: 14px;
+  font-size: 28px;
   color: #9feaf9;
   opacity: 0.8;
+}
+
+.ap-recovery-info {
+  display: flex;
+  justify-content: flex-start;
 }
 
 /* 任务容器样式 */
 .task-item {
   min-height: 60px;
+  display: flex;
+  align-items: center;
 }
 
 .task-container {
@@ -623,7 +664,9 @@ defineExpose({
   flex-direction: row;
   gap: 12px;
   width: 100%;
-  justify-content: space-between;
+  justify-content: center;
+  align-items: center;
+  height: 100%;
 }
 
 .task-item-horizontal {

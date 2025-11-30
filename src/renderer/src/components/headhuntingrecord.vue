@@ -8,7 +8,7 @@
           <option value="native">原始格式</option>
           <option value="official">通用格式</option>
         </select>
-        
+
         <!-- 导出按钮组 -->
         <div class="export-buttons">
           <button @click="exportGachaData" class="export-btn" title="导出当前账号记录" :disabled="exportLoading">
@@ -24,11 +24,29 @@
             合并导出
           </button>
         </div>
-        
+
         <!-- 导入按钮 -->
         <button @click="importGachaData" class="import-btn" title="导入寻访记录">
           导入记录
         </button>
+      </div>
+    </div>
+
+    <!-- 合成玉花费统计 -->
+    <div v-if="!authStore.isLogin || (categories.length > 0 && !selectedCategory)" class="cost-statistics">
+      <div class="statistics-card">
+        <div class="statistics-info">
+          <h4>总抽数</h4>
+          <p class="total-pulls">{{ getTotalPulls() }} 抽</p>
+        </div>
+        <div class="statistics-divider"></div>
+        <div class="statistics-cost">
+          <h4>大约消耗</h4>
+          <p class="total-cost">
+            {{ getTotalOrundumCost() }}
+            <img src="@assets/item/DIAMOND_SHD.png" alt="合成玉" class="DIAMOND_SHD" />
+          </p>
+        </div>
       </div>
     </div>
 
@@ -85,19 +103,19 @@
               <span class="count-label">抽</span>
             </div>
           </div>
-          
+
           <!-- 展开的记录显示 -->
           <div v-if="isCategoryExpanded(category.id)" class="category-records">
             <div class="highlights-container">
-              <div 
-                v-for="(processedRecord, index) in getProcessedRecords(category.id)" 
+              <div
+                v-for="(processedRecord, index) in getProcessedRecords(category.id)"
                 :key="index"
                 class="highlight-record"
                 :class="{ 'six-star': processedRecord.record.rarity === 5, 'five-star': processedRecord.record.rarity === 4 }"
               >
                 <div class="record-info">
-                  <img 
-                    :src="processedRecord.avatarUrl" 
+                  <img
+                    :src="processedRecord.avatarUrl"
                     :alt="processedRecord.record.charName"
                     class="operator-avatar"
                   />
@@ -119,7 +137,7 @@
                   </div>
                 </div>
               </div>
-              
+
               <!-- 无高光记录提示 -->
               <div v-if="getProcessedRecords(category.id).length === 0" class="no-highlights">
                 <p>该卡池暂无数据</p>
@@ -261,15 +279,15 @@
               <div v-if="expandedImportedCategories[`${fileIndex}-${categoryIndex}`]" class="imported-records-display">
                 <!-- 高光记录显示 -->
                 <div v-if="getProcessedImportedRecords(category.records).length > 0" class="imported-highlights-container">
-                  <div 
-                    v-for="(processedRecord, index) in getProcessedImportedRecords(category.records)" 
+                  <div
+                    v-for="(processedRecord, index) in getProcessedImportedRecords(category.records)"
                     :key="index"
                     class="imported-highlight-record"
                     :class="{ 'six-star': processedRecord.record.rarity === 5, 'five-star': processedRecord.record.rarity === 4 }"
                   >
                     <div class="record-info">
-                      <img 
-                        :src="processedRecord.avatarUrl" 
+                      <img
+                        :src="processedRecord.avatarUrl"
                         :alt="processedRecord.record.charName"
                         class="operator-avatar"
                         @error="handleImageError"
@@ -284,7 +302,7 @@
                     </div>
                   </div>
                 </div>
-                
+
                 <!-- 如果没有高光记录，显示提示 -->
                 <div v-else class="no-highlights-notice">
                   <p>该卡池暂无五星或六星记录</p>
@@ -835,10 +853,28 @@ const getRecordCountForCategory = (categoryId: string) => {
   return categoryRecordCounts.value.get(categoryId) || 0;
 };
 
+// 计算总抽数
+const getTotalPulls = () => {
+  let total = 0;
+  categoryRecordCounts.value.forEach((count) => {
+    total += count;
+  });
+  return total.toLocaleString();
+};
+
+// 计算总合成玉花费（每抽600合成玉）
+const getTotalOrundumCost = () => {
+  let total = 0;
+  categoryRecordCounts.value.forEach((count) => {
+    total += count;
+  });
+  return (total * 600).toLocaleString();
+};
+
 // 切换卡池展开状态
 const toggleCategory = async (category: GachaCategory) => {
   const categoryId = category.id;
-  
+
   if (expandedCategories.value.has(categoryId)) {
     // 如果已展开，则折叠
     expandedCategories.value.delete(categoryId);
@@ -847,7 +883,7 @@ const toggleCategory = async (category: GachaCategory) => {
     // 如果未展开，则展开并加载数据
     expandedCategories.value.add(categoryId);
     logger.info('展开卡池', { categoryId, categoryName: category.name });
-    
+
     // 如果还没有加载过该卡池的记录，则加载
     if (!categoryRecords.value.has(categoryId)) {
       await loadCategoryRecords(category);
@@ -933,7 +969,7 @@ const loadCategoryRecords = async (category: GachaCategory) => {
 
     // 保存排序后的记录到Map中
     categoryRecords.value.set(category.id, allRecords);
-    
+
     logger.info('卡池记录加载完成', {
       categoryId: category.id,
       categoryName: category.name,
@@ -949,9 +985,9 @@ const loadCategoryRecords = async (category: GachaCategory) => {
       categoryId: category.id,
       categoryName: category.name
     });
-    
+
     showToast(`加载卡池 ${category.name} 的记录失败: ${errorMessage}`);
-    
+
     // 加载失败时移除展开状态
     expandedCategories.value.delete(category.id);
   }
@@ -976,13 +1012,13 @@ const getProcessedRecords = (categoryId: string) => {
     avatarUrl: string;
     isHighlight: boolean;
   }> = [];
-  
+
   let pullCount = 0;
-  
+
   // 按时间顺序遍历记录（从早到晚）
   records.forEach((record) => {
     pullCount++;
-    
+
     // 如果是六星，添加记录并重置计数
     if (record.rarity === 5) {
       processedRecords.push({
@@ -992,7 +1028,7 @@ const getProcessedRecords = (categoryId: string) => {
         isHighlight: true
       });
       pullCount = 0; // 六星重置计数，开始新的计数周期
-    } 
+    }
     // 如果是五星，添加记录但不重置计数
     else if (record.rarity === 4) {
       processedRecords.push({
@@ -1005,7 +1041,7 @@ const getProcessedRecords = (categoryId: string) => {
     }
     // 三星和二星不显示，只累计计数
   });
-  
+
   return processedRecords;
 };
 
@@ -1017,9 +1053,9 @@ const getProcessedImportedRecords = (records: GachaRecord[]) => {
     avatarUrl: string;
     isHighlight: boolean;
   }> = [];
-  
+
   let pullCount = 0;
-  
+
   // 按时间戳和位置排序记录（从早到晚，相同时间戳内按pos从小到大）
   const sortedRecords = [...records].sort((a, b) => {
     const timeA = parseFloat(a.gachaTs);
@@ -1029,10 +1065,10 @@ const getProcessedImportedRecords = (records: GachaRecord[]) => {
     }
     return a.pos - b.pos;
   });
-  
+
   sortedRecords.forEach((record) => {
     pullCount++;
-    
+
     // 如果是六星，添加记录并重置计数
     if (record.rarity === 5) {
       processedRecords.push({
@@ -1042,7 +1078,7 @@ const getProcessedImportedRecords = (records: GachaRecord[]) => {
         isHighlight: true
       });
       pullCount = 0; // 六星重置计数，开始新的计数周期
-    } 
+    }
     // 如果是五星，添加记录但不重置计数
     else if (record.rarity === 4) {
       processedRecords.push({
@@ -1055,7 +1091,7 @@ const getProcessedImportedRecords = (records: GachaRecord[]) => {
     }
     // 三星和二星不显示，只累计计数
   });
-  
+
   return processedRecords;
 };
 
@@ -1075,7 +1111,7 @@ const handleImageError = (event: Event) => {
 // 获取干员头像URL
 const getAvatarUrl = (charId: string): string => {
   if (!charId) return '';
-  
+
   // 使用GitHub ArknightsGameResource项目的CDN来获取头像
   // 明日方舟干员头像CDN格式
   return `https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/avatar/${charId}.png`;
@@ -1941,7 +1977,7 @@ const exportMergedAllData = async () => {
     if (exportFormat.value === 'official') {
       // 合并通用格式导出 - 需要将所有数据转换为官方格式
       finalData = {};
-      
+
       // 处理账号数据
       if (mergedData.accountData && mergedData.accountData.categories) {
         mergedData.accountData.categories.forEach((category: any) => {
@@ -2100,7 +2136,7 @@ const loadAllPoolNames = async (
           }
 
           recordCount = allRecords.length;
-          
+
           // 设置poolName
           const firstRecord = countResponse.list[0];
           categoryPoolNames.value.set(category.id, firstRecord.poolName);
@@ -2413,6 +2449,77 @@ onMounted(() => {
   background: #4a4a4a;
   color: #ffffff;
   border-color: #646cff;
+}
+
+/* 合成玉花费统计样式 */
+.cost-statistics {
+  margin: 24px 0;
+}
+
+.statistics-card {
+  display: flex;
+  align-items: center;
+  background: linear-gradient(135deg, #2d2d2d 0%, #3a3a3a 100%);
+  border-radius: 12px;
+  padding: 20px 24px;
+  border: 1px solid #404040;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  transition: all 0.3s ease;
+}
+
+.statistics-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
+  border-color: #646cff;
+}
+
+.statistics-info {
+  flex: 1;
+  margin-right: 20px;
+}
+
+.statistics-info h4 {
+  margin: 0 0 4px 0;
+  font-size: 14px;
+  color: #999;
+  font-weight: 500;
+}
+
+.total-pulls {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 700;
+  color: #646cff;
+}
+
+.statistics-divider {
+  width: 1px;
+  height: 40px;
+  background: linear-gradient(180deg, transparent, #404040, transparent);
+  margin: 0 20px;
+}
+
+.statistics-cost h4 {
+  margin: 0 0 4px 0;
+  font-size: 14px;
+  color: #999;
+  font-weight: 500;
+}
+
+.total-cost {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 700;
+  color: #ffa500;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.DIAMOND_SHD {
+  width: 64px;
+  height: 64px;
+  object-fit: contain;
 }
 
 /* 卡池列表样式 */
