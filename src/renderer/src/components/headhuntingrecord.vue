@@ -555,20 +555,7 @@ const executeGachaFlow = async () => {
   logger.gacha('寻访记录验证流程执行完成');
 };
 
-// 选择卡池 - 在模板中使用
-const selectCategory = async (category: GachaCategory) => {
-  logger.info('选择卡池', {
-    categoryId: category.id,
-    categoryName: category.name
-  });
 
-  selectedCategory.value = category;
-  currentPage.value = 1;
-  lastRecordPos.value = null;
-  lastRecordTs.value = null;
-
-  await loadGachaRecords();
-};
 
 const loadGachaRecords = async () => {
   logger.info('开始加载抽卡记录', {
@@ -743,20 +730,7 @@ const nextPage = async () => {
   }
 };
 
-// 返回卡池列表 - 在模板中使用
-const backToCategories = () => {
-  logger.info('返回卡池列表', {
-    hadSelectedCategory: !!selectedCategory.value,
-    previousCategoryId: selectedCategory.value?.id,
-    previousRecordsCount: gachaRecords.value.length
-  });
 
-  selectedCategory.value = null;
-  gachaRecords.value = [];
-  currentPage.value = 1;
-  lastRecordPos.value = null;
-  lastRecordTs.value = null;
-};
 
 const getRecordIndex = (index: number) => {
   return (currentPage.value - 1) * pageSize + index + 1;
@@ -1083,6 +1057,19 @@ const getProcessedImportedRecords = (records: GachaRecord[]) => {
   });
   
   return processedRecords;
+};
+
+// 处理图片加载错误
+const handleImageError = (event: Event) => {
+  const img = event.target as HTMLImageElement;
+  if (img) {
+    // 设置默认头像或隐藏图片
+    img.style.display = 'none';
+    logger.warn('干员头像加载失败', {
+      src: img.src,
+      alt: img.alt
+    });
+  }
 };
 
 // 获取干员头像URL
