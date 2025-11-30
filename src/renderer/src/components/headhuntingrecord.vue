@@ -74,9 +74,8 @@
           v-for="category in categories"
           :key="category.id"
           class="category-card-horizontal"
-          @click="selectCategory(category)"
         >
-          <div class="category-info">
+          <div class="category-info" @click="toggleCategory(category)">
             <div class="category-type-name">
               <h4>{{ category.name.replace('\n', ' ') }}</h4>
               <p class="category-poolname">{{ getPoolNameForCategory(category.id) }}</p>
@@ -86,21 +85,50 @@
               <span class="count-label">抽</span>
             </div>
           </div>
+          
+          <!-- 展开的记录表格 -->
+          <div v-if="isCategoryExpanded(category.id)" class="category-records">
+            <div class="records-table-container">
+              <table class="gacha-table">
+                <thead>
+                <tr>
+                  <th>序号</th>
+                  <th>干员名称</th>
+                  <th>星级</th>
+                  <th>获取时间</th>
+                </tr>
+                </thead>
+                <tbody>
+                <tr v-for="(record, index) in getCategoryRecords(category.id)" :key="index">
+                  <td>{{ index + 1 }}</td>
+                  <td>{{ record.charName }}</td>
+                  <td>
+                    <span class="rarity-badge" :class="`rarity-${record.rarity}`">
+                      {{ getRarityText(record.rarity) }}
+                    </span>
+                  </td>
+                  <td>{{ formatTime(record.gachaTs) }}</td>
+                </tr>
+                </tbody>
+              </table>
+              
+              <!-- 无数据提示 -->
+              <div v-if="getCategoryRecords(category.id).length === 0" class="no-records">
+                <p>该卡池暂无抽卡记录</p>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
 
-    <!-- 抽卡记录详情 -->
-    <div v-else-if="selectedCategory && gachaRecords.length > 0" class="records-container">
-      <!-- 返回图标按钮 -->
-      <button @click="backToCategories" class="back-icon-btn" title="返回卡池列表">
-        <img src="@assets/exit.png" alt="返回" class="back-icon-img" />
-      </button>
 
-      <div class="records-header">
-        <h3>{{ selectedCategory.name.replace('\n', ' ') }}</h3>
-      </div>
 
+
+
+
+    <!-- 卡池详情 -->
+    <div v-else-if="selectedCategory && gachaRecords.length > 0" class="pool-details">
       <div class="table-container">
         <table class="gacha-table">
           <thead>
@@ -152,10 +180,7 @@
 
     <!-- 无数据状态 -->
     <div v-else-if="selectedCategory && gachaRecords.length === 0" class="no-data">
-      <!-- 返回图标按钮 -->
-      <button @click="backToCategories" class="back-icon-btn" title="返回卡池列表">
-        <img src="@assets/exit.png" alt="返回" class="back-icon-img" />
-      </button>
+
 
       <div class="no-data-content">
         <h3>暂无数据</h3>
@@ -259,6 +284,39 @@
               清除此文件
             </button>
           </div>
+          
+          <!-- 展开的记录表格 -->
+          <div v-if="isCategoryExpanded(category.id)" class="category-records">
+            <div class="records-table-container">
+              <table class="gacha-table">
+                <thead>
+                <tr>
+                  <th>序号</th>
+                  <th>干员名称</th>
+                  <th>星级</th>
+                  <th>获取时间</th>
+                </tr>
+                </thead>
+                <tbody>
+                <tr v-for="(record, index) in getCategoryRecords(category.id)" :key="index">
+                  <td>{{ index + 1 }}</td>
+                  <td>{{ record.charName }}</td>
+                  <td>
+                    <span class="rarity-badge" :class="`rarity-${record.rarity}`">
+                      {{ getRarityText(record.rarity) }}
+                    </span>
+                  </td>
+                  <td>{{ formatTime(record.gachaTs) }}</td>
+                </tr>
+                </tbody>
+              </table>
+              
+              <!-- 无数据提示 -->
+              <div v-if="getCategoryRecords(category.id).length === 0" class="no-records">
+                <p>该卡池暂无抽卡记录</p>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -310,6 +368,8 @@ const selectedCategory = ref<GachaCategory | null>(null);
 const gachaRecords = ref<GachaRecord[]>([]);
 const categoryPoolNames = ref<Map<string, string>>(new Map());
 const categoryRecordCounts = ref<Map<string, number>>(new Map());
+const categoryRecords = ref<Map<string, GachaRecord[]>>(new Map());
+const expandedCategories = ref<Set<string>>(new Set());
 
 // 导入数据状态变量 - 重构为支持多文件
 const importedData = ref<Array<{
@@ -494,7 +554,8 @@ const executeGachaFlow = async () => {
   });
 
   logger.gacha('卡池详细信息预获取完成', {
-    poolNamesCount: categoryPoolNames.value.size
+    poolNamesCount: categoryPoolNames.value.size,
+    recordCountsCount: categoryRecordCounts.value.size
   });
 
   // 将验证信息临时存储，供后续使用
@@ -817,6 +878,126 @@ const getPoolNameForCategory = (categoryId: string) => {
 
 const getRecordCountForCategory = (categoryId: string) => {
   return categoryRecordCounts.value.get(categoryId) || 0;
+};
+
+// 切换卡池展开状态
+const toggleCategory = async (category: GachaCategory) => {
+  const categoryId = category.id;
+  
+  if (expandedCategories.value.has(categoryId)) {
+    // 如果已展开，则折叠
+    expandedCategories.value.delete(categoryId);
+    logger.info('折叠卡池', { categoryId, categoryName: category.name });
+  } else {
+    // 如果未展开，则展开并加载数据
+    expandedCategories.value.add(categoryId);
+    logger.info('展开卡池', { categoryId, categoryName: category.name });
+    
+    // 如果还没有加载过该卡池的记录，则加载
+    if (!categoryRecords.value.has(categoryId)) {
+      await loadCategoryRecords(category);
+    }
+  }
+};
+
+// 加载单个卡池的记录
+const loadCategoryRecords = async (category: GachaCategory) => {
+  logger.info('开始加载卡池记录', {
+    categoryId: category.id,
+    categoryName: category.name
+  });
+
+  try {
+    // 获取临时验证信息
+    const authData = localStorage.getItem('gacha_auth');
+    if (!authData) {
+      logger.error('加载卡池记录失败: 验证信息已过期');
+      showToast('验证信息已过期，请重新登录');
+      return;
+    }
+
+    const { uid, cookie, roleToken, accountToken } = JSON.parse(authData);
+
+    // 获取该卡池的所有记录
+    const allRecords: GachaRecord[] = [];
+    let currentPos: number | undefined = 0;
+    let currentTs: string | undefined;
+    let hasMore = true;
+    let pageCount = 0;
+
+    while (hasMore) {
+      pageCount++;
+      const response = await logger.performanceAsync(`加载卡池${category.name}第${pageCount}页`, async () => {
+        return await getGachaHistory(
+          uid,
+          cookie,
+          roleToken,
+          accountToken,
+          category.id,
+          20, // 每页20条记录
+          currentPos,
+          currentTs
+        );
+      });
+
+      if (response && response.list && Array.isArray(response.list)) {
+        allRecords.push(...response.list);
+        hasMore = response.hasMore;
+
+        if (response.list.length > 0) {
+          const lastRecord = response.list[response.list.length - 1];
+          currentPos = lastRecord.pos;
+          currentTs = lastRecord.gachaTs;
+        } else {
+          hasMore = false;
+        }
+      } else {
+        hasMore = false;
+      }
+
+      // 防止请求过多，最多加载200条
+      if (allRecords.length >= 200) {
+        hasMore = false;
+        logger.warn(`卡池${category.name}记录过多，限制加载200条`, {
+          totalRecords: allRecords.length
+        });
+      }
+    }
+
+    // 保存记录到Map中
+    categoryRecords.value.set(category.id, allRecords);
+    
+    logger.info('卡池记录加载完成', {
+      categoryId: category.id,
+      categoryName: category.name,
+      recordCount: allRecords.length,
+      pageCount: pageCount
+    });
+
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : '未知错误';
+    logger.error('加载卡池记录失败', {
+      error: errorMessage,
+      stack: error instanceof Error ? error.stack : undefined,
+      categoryId: category.id,
+      categoryName: category.name
+    });
+    
+    showToast(`加载卡池 ${category.name} 的记录失败: ${errorMessage}`);
+    
+    // 加载失败时移除展开状态
+    expandedCategories.value.delete(category.id);
+  }
+};
+
+// 获取卡池的记录
+const getCategoryRecords = (categoryId: string) => {
+  return categoryRecords.value.get(categoryId) || [];
+};
+
+// 检查卡池是否展开
+const isCategoryExpanded = (categoryId: string) => {
+  return expandedCategories.value.has(categoryId);
 };
 
 // 根据poolId映射到ci字段
@@ -2230,7 +2411,7 @@ onMounted(() => {
 
 .category-count {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 4px;
   text-align: right;
 }
@@ -2244,6 +2425,51 @@ onMounted(() => {
 .count-label {
   font-size: 12px;
   color: #999;
+}
+
+.expand-icon {
+  font-size: 14px;
+  color: #ccc;
+  margin-left: 4px;
+  transition: transform 0.2s;
+}
+
+.category-records {
+  border-top: 1px solid #404040;
+  margin-top: 12px;
+  padding-top: 12px;
+}
+
+.records-table-container {
+  max-height: 300px;
+  overflow-y: auto;
+  border-radius: 6px;
+  border: 1px solid #404040;
+}
+
+.records-table-container .gacha-table {
+  margin: 0;
+  font-size: 12px;
+}
+
+.records-table-container .gacha-table th,
+.records-table-container .gacha-table td {
+  padding: 8px 12px;
+  border-bottom: 1px solid #404040;
+}
+
+.records-table-container .gacha-table th {
+  background: #2d2d2d;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.no-records {
+  padding: 20px;
+  text-align: center;
+  color: #999;
+  font-size: 14px;
 }
 
 .category-card h4 {
@@ -2762,6 +2988,24 @@ onMounted(() => {
 
   .category-count {
     align-self: flex-end;
+  }
+
+  .category-records {
+    margin-top: 8px;
+    padding-top: 8px;
+  }
+
+  .records-table-container {
+    max-height: 200px;
+  }
+
+  .records-table-container .gacha-table {
+    font-size: 11px;
+  }
+
+  .records-table-container .gacha-table th,
+  .records-table-container .gacha-table td {
+    padding: 6px 8px;
   }
 
   .records-header {
