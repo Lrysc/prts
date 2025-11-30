@@ -258,31 +258,37 @@
                 <span class="toggle-icon">{{ expandedImportedCategories[`${fileIndex}-${categoryIndex}`] ? '▲' : '▼' }}</span>
               </h5>
 
-              <div v-if="expandedImportedCategories[`${fileIndex}-${categoryIndex}`]" class="imported-records-table">
-                <table class="gacha-table">
-                  <thead>
-                  <tr>
-                    <th>序号</th>
-                    <th>卡池名称</th>
-                    <th>干员名称</th>
-                    <th>星级</th>
-                    <th>获取时间</th>
-                  </tr>
-                  </thead>
-                  <tbody>
-                  <tr v-for="(record, recordIndex) in category.records" :key="recordIndex">
-                    <td>{{ recordIndex + 1 }}</td>
-                    <td>{{ record.poolName || '未知卡池' }}</td>
-                    <td>{{ record.charName }}</td>
-                    <td>
-                        <span class="rarity-badge" :class="`rarity-${record.rarity}`">
-                          {{ getRarityText(record.rarity) }}
-                        </span>
-                    </td>
-                    <td>{{ formatTime(record.gachaTs) }}</td>
-                  </tr>
-                  </tbody>
-                </table>
+              <div v-if="expandedImportedCategories[`${fileIndex}-${categoryIndex}`]" class="imported-records-display">
+                <!-- 高光记录显示 -->
+                <div v-if="getProcessedImportedRecords(category.records).length > 0" class="imported-highlights-container">
+                  <div 
+                    v-for="(processedRecord, index) in getProcessedImportedRecords(category.records)" 
+                    :key="index"
+                    class="imported-highlight-record"
+                    :class="{ 'six-star': processedRecord.record.rarity === 5, 'five-star': processedRecord.record.rarity === 4 }"
+                  >
+                    <div class="record-info">
+                      <img 
+                        :src="processedRecord.avatarUrl" 
+                        :alt="processedRecord.record.charName"
+                        class="operator-avatar"
+                        @error="handleImageError"
+                      />
+                      <div class="record-details">
+                        <h4 class="operator-name">{{ processedRecord.record.charName }}</h4>
+                        <div class="pull-info">
+                          <span class="pull-count">{{ processedRecord.pullCount }}</span>
+                          <span class="count-label">抽</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                
+                <!-- 如果没有高光记录，显示提示 -->
+                <div v-else class="no-highlights-notice">
+                  <p>该卡池暂无五星或六星记录</p>
+                </div>
               </div>
             </div>
           </div>
@@ -1001,6 +1007,56 @@ const getProcessedRecords = (categoryId: string) => {
   
   // 按时间顺序遍历记录（从早到晚）
   records.forEach((record) => {
+    pullCount++;
+    
+    // 如果是六星，添加记录并重置计数
+    if (record.rarity === 5) {
+      processedRecords.push({
+        record,
+        pullCount,
+        avatarUrl: getAvatarUrl(record.charId),
+        isHighlight: true
+      });
+      pullCount = 0; // 六星重置计数，开始新的计数周期
+    } 
+    // 如果是五星，添加记录但不重置计数
+    else if (record.rarity === 4) {
+      processedRecords.push({
+        record,
+        pullCount,
+        avatarUrl: getAvatarUrl(record.charId),
+        isHighlight: true
+      });
+      // 五星不重置计数，继续累计到下一个六星
+    }
+    // 三星和二星不显示，只累计计数
+  });
+  
+  return processedRecords;
+};
+
+// 处理导入数据的高光显示
+const getProcessedImportedRecords = (records: GachaRecord[]) => {
+  const processedRecords: Array<{
+    record: GachaRecord;
+    pullCount: number;
+    avatarUrl: string;
+    isHighlight: boolean;
+  }> = [];
+  
+  let pullCount = 0;
+  
+  // 按时间戳和位置排序记录（从早到晚，相同时间戳内按pos从小到大）
+  const sortedRecords = [...records].sort((a, b) => {
+    const timeA = parseFloat(a.gachaTs);
+    const timeB = parseFloat(b.gachaTs);
+    if (timeA !== timeB) {
+      return timeA - timeB;
+    }
+    return a.pos - b.pos;
+  });
+  
+  sortedRecords.forEach((record) => {
     pullCount++;
     
     // 如果是六星，添加记录并重置计数
@@ -2487,6 +2543,26 @@ onMounted(() => {
   border: 1px solid #404040;
 }
 
+/* 自定义滚动条样式 - 记录表格容器 */
+.records-table-container::-webkit-scrollbar {
+  width: 6px;
+}
+
+.records-table-container::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+}
+
+.records-table-container::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 3px;
+  transition: background 0.2s ease;
+}
+
+.records-table-container::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.5);
+}
+
 .records-table-container .gacha-table {
   margin: 0;
   font-size: 12px;
@@ -2510,6 +2586,26 @@ onMounted(() => {
   max-height: 300px;
   overflow-y: auto;
   padding: 6px;
+}
+
+/* 自定义滚动条样式 - 高光记录容器 */
+.highlights-container::-webkit-scrollbar {
+  width: 6px;
+}
+
+.highlights-container::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+}
+
+.highlights-container::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 3px;
+  transition: background 0.2s ease;
+}
+
+.highlights-container::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.5);
 }
 
 .highlight-record {
@@ -2669,6 +2765,27 @@ onMounted(() => {
   margin-bottom: 20px;
   border: 1px solid #404040;
   border-radius: 8px;
+}
+
+/* 自定义滚动条样式 - 表格容器 */
+.table-container::-webkit-scrollbar {
+  height: 6px;
+  width: 6px;
+}
+
+.table-container::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+}
+
+.table-container::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 3px;
+  transition: background 0.2s ease;
+}
+
+.table-container::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.5);
 }
 
 .gacha-table {
@@ -2997,8 +3114,155 @@ onMounted(() => {
   overflow-x: auto;
 }
 
+/* 自定义滚动条样式 - 导入记录表格 */
+.imported-records-table::-webkit-scrollbar {
+  height: 6px;
+  width: 6px;
+}
+
+.imported-records-table::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+}
+
+.imported-records-table::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 3px;
+  transition: background 0.2s ease;
+}
+
+.imported-records-table::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.5);
+}
+
 .imported-records-table .gacha-table {
   margin: 0;
+}
+
+/* 导入数据高光显示样式 */
+.imported-records-display {
+  border-top: 1px solid #404040;
+  padding: 12px;
+}
+
+.imported-highlights-container {
+  max-height: 300px;
+  overflow-y: auto;
+  padding: 6px;
+}
+
+/* 自定义滚动条样式 - 导入高光记录容器 */
+.imported-highlights-container::-webkit-scrollbar {
+  width: 6px;
+}
+
+.imported-highlights-container::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+}
+
+.imported-highlights-container::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 3px;
+  transition: background 0.2s ease;
+}
+
+.imported-highlights-container::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.5);
+}
+
+.imported-highlight-record {
+  display: flex;
+  align-items: center;
+  padding: 8px;
+  margin-bottom: 4px;
+  border-radius: 6px;
+  border: 1px solid #404040;
+  background: #2d2d2d;
+  transition: all 0.3s ease;
+  min-height: 66px; /* 头像50px + padding16px */
+}
+
+.imported-highlight-record:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.imported-highlight-record.six-star {
+  border-color: #ff6b6b;
+  background: linear-gradient(135deg, #2d2d2d 0%, #3d1a1a 100%);
+}
+
+.imported-highlight-record.five-star {
+  border-color: #ffd93d;
+  background: linear-gradient(135deg, #2d2d2d 0%, #3d2d1a 100%);
+}
+
+.imported-highlight-record .record-info {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  gap: 12px;
+}
+
+.imported-highlight-record .operator-avatar {
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: #1a1a1a;
+  border: 2px solid #404040;
+  flex-shrink: 0;
+}
+
+.imported-highlight-record.six-star .operator-avatar {
+  border-color: #ff6b6b;
+}
+
+.imported-highlight-record.five-star .operator-avatar {
+  border-color: #ffd93d;
+}
+
+.imported-highlight-record .record-details {
+  flex: 1;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.imported-highlight-record .operator-name {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.imported-highlight-record .pull-info {
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
+}
+
+.imported-highlight-record .pull-count {
+  font-size: 18px;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.imported-highlight-record .count-label {
+  font-size: 12px;
+  color: #cccccc;
+}
+
+.no-highlights-notice {
+  text-align: center;
+  padding: 20px;
+  color: #999999;
+}
+
+.no-highlights-notice p {
+  margin: 0;
+  font-size: 14px;
 }
 
 .file-actions {
