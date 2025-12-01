@@ -55,15 +55,15 @@
                 <!-- 背景圆环 -->
                 <circle cx="90" cy="90" r="80" fill="none" stroke="#333" stroke-width="8"/>
                 <!-- 进度圆环 -->
-                <circle 
-                  cx="90" cy="90" r="80" 
-                  fill="none" 
-                  :stroke="gameDataStore.getActualApInfo?.remainSecs > 0 ? '#888' : '#4a90e2'" 
-                  stroke-width="8" 
-                  :stroke-dasharray="circumference" 
-                  :stroke-dashoffset="apProgress" 
-                  stroke-linecap="round" 
-                  transform="rotate(-90 90 90)" 
+                <circle
+                  cx="90" cy="90" r="80"
+                  fill="none"
+                  :stroke="gameDataStore.getActualApInfo?.remainSecs > 0 ? '#888' : '#4a90e2'"
+                  stroke-width="8"
+                  :stroke-dasharray="circumference"
+                  :stroke-dashoffset="apProgress"
+                  stroke-linecap="round"
+                  transform="rotate(-90 90 90)"
                   class="ap-progress-circle"
                 />
               </svg>
@@ -83,9 +83,24 @@
               </div>
             </div>
           </li>
-          <li class="data-item">
-            <span class="label">剿灭作战</span>
-            <span class="value">{{ gameDataStore.getCampaignReward || '--' }} 合成玉</span>
+          <li class="data-item weekly-item">
+            <div class="weekly-container">
+              <h4 class="weekly-title">周常</h4>
+              <div class="weekly-content">
+                <div class="weekly-row">
+                  <span class="weekly-label">剿灭作战</span>
+                  <span class="weekly-value campaign-value">{{ gameDataStore.getCampaignReward || '--' }} 合成玉</span>
+                </div>
+                <div class="weekly-row">
+                  <span class="weekly-label">数据增补仪</span>
+                  <span class="weekly-value supplement-value">{{ gameDataStore.getTowerLowerItem || '--' }}</span>
+                </div>
+                <div class="weekly-row">
+                  <span class="weekly-label">数据增补条</span>
+                  <span class="weekly-value supplement-value">{{ gameDataStore.getTowerHigherItem || '--' }}</span>
+                </div>
+              </div>
+            </div>
           </li>
           <li class="data-item task-item">
             <div class="task-container-horizontal">
@@ -98,14 +113,6 @@
                 <span class="task-value weekly-value">{{ gameDataStore.getWeeklyTaskProgress || '--' }}</span>
               </div>
             </div>
-          </li>
-          <li class="data-item">
-            <span class="label">数据增补仪</span>
-            <span class="value">{{ gameDataStore.getTowerLowerItem || '--' }}</span>
-          </li>
-          <li class="data-item">
-            <span class="label">数据增补条</span>
-            <span class="value">{{ gameDataStore.getTowerHigherItem || '--' }}</span>
           </li>
           <li class="data-item">
             <div class="task-container">
@@ -172,8 +179,8 @@
             <div class="training-container">
               <div class="training-left">
                 <div class="operator-info" v-if="gameDataStore.getTrainingDetails?.trainee">
-                  <img 
-                    :src="getOperatorAvatarUrl(gameDataStore.getTrainingDetails.traineeCharId)" 
+                  <img
+                    :src="getOperatorAvatarUrl(gameDataStore.getTrainingDetails.traineeCharId)"
                     :alt="gameDataStore.getTrainingDetails.trainee"
                     class="training-avatar"
                     @error="handleOperatorImageError(gameDataStore.getTrainingDetails.traineeCharId, 'avatar', $event)"
@@ -189,8 +196,8 @@
               </div>
               <div class="training-right">
                 <div class="operator-info" v-if="gameDataStore.getTrainingDetails?.trainer">
-                  <img 
-                    :src="getOperatorAvatarUrl(gameDataStore.getTrainingDetails.trainerCharId)" 
+                  <img
+                    :src="getOperatorAvatarUrl(gameDataStore.getTrainingDetails.trainerCharId)"
                     :alt="gameDataStore.getTrainingDetails.trainer"
                     class="training-avatar"
                     @error="handleOperatorImageError(gameDataStore.getTrainingDetails.trainerCharId, 'avatar', $event)"
@@ -817,11 +824,76 @@ defineExpose({
   padding: 4px 8px;
   border-radius: 4px;
   background: rgba(255, 255, 255, 0.05);
+}
+
+/* 周常容器样式 */
+.weekly-item {
+  min-height: 80px;
+  display: flex;
+  align-items: center;
+}
+
+.weekly-container {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  height: 100%;
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.weekly-title {
+  color: #fad000;
+  font-size: 16px;
+  font-weight: 600;
+  text-align: center;
+  margin: 0;
+  padding-bottom: 4px;
+  border-bottom: 1px solid rgba(250, 208, 0, 0.3);
+}
+
+.weekly-content {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+  justify-content: center;
+}
+
+.weekly-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 3px 6px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.03);
   transition: background-color 0.2s ease;
 }
 
-.task-row:hover {
-  background: rgba(255, 255, 255, 0.1);
+.weekly-row:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.weekly-label {
+  color: #ff9800;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.weekly-value {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.campaign-value {
+  color: #ffd700 !important;
+}
+
+.supplement-value {
+  color: #ffffff !important;
 }
 
 .task-label {
@@ -834,16 +906,10 @@ defineExpose({
 }
 
 .daily-label {
-  background: rgba(108, 194, 74, 0.3);
   color: #6cc24a;
-  border: 1px solid rgba(108, 194, 74, 0.5);
 }
 
-.weekly-label {
-  background: rgba(70, 130, 180, 0.3);
-  color: #4682b4;
-  border: 1px solid rgba(70, 130, 180, 0.5);
-}
+
 
 .task-value {
   font-size: 15px;
@@ -1089,25 +1155,22 @@ defineExpose({
 
 /* 数据项颜色区分 - 为不同类型数据提供视觉区分 */
 .data-item:nth-child(1) .value { color: #9feaf9; } /* 理智 - 蓝色 */
-.data-item:nth-child(2) .value { color: #fad000; } /* 剿灭 - 黄色 */
-.data-item:nth-child(3) .value { color: #6cc24a; } /* 每日任务 - 绿色 */
-.data-item:nth-child(4) .value { color: #ff7eb9; } /* 每周任务 - 粉色 */
-.data-item:nth-child(5) .value { color: #7afcff; } /* 数据增补仪 - 青色 */
-.data-item:nth-child(6) .value { color: #ff9800; } /* 数据增补条 - 橙色 */
-.data-item:nth-child(7) .value { color: #ff65a3; } /* 公开招募 - 玫红 */
-.data-item:nth-child(8) .value { color: #feff9c; } /* 公招刷新 - 浅黄 */
+.data-item:nth-child(2) .value { color: #6cc24a; } /* 每日任务 - 绿色 */
+.data-item:nth-child(3) .value { color: #ff7eb9; } /* 每周任务 - 粉色 */
+.data-item:nth-child(4) .value { color: #ff65a3; } /* 公开招募 - 玫红 */
+.data-item:nth-child(5) .value { color: #feff9c; } /* 公招刷新 - 浅黄 */
 
 /* 基建数据颜色 */
-.data-item:nth-child(9) .value { color: #6bffb8; } /* 贸易站 - 亮绿 */
-.data-item:nth-child(10) .value { color: #9feaf9; } /* 制造站 - 蓝色 */
-.data-item:nth-child(11) .value { color: #ff7eb9; } /* 宿舍休息 - 粉色 */
-.data-item:nth-child(12) .value { color: #fad000; } /* 会客室线索 - 黄色 */
-.data-item:nth-child(13) .value { color: #ff6b6b; } /* 干员疲劳 - 红色 */
-.data-item:nth-child(14) .value { color: #7afcff; } /* 无人机 - 青色 */
-.data-item:nth-child(15) .value { color: #b18cff; } /* 训练室 - 紫色 */
+.data-item:nth-child(6) .value { color: #6bffb8; } /* 贸易站 - 亮绿 */
+.data-item:nth-child(7) .value { color: #9feaf9; } /* 制造站 - 蓝色 */
+.data-item:nth-child(8) .value { color: #ff7eb9; } /* 宿舍休息 - 粉色 */
+.data-item:nth-child(9) .value { color: #fad000; } /* 会客室线索 - 黄色 */
+.data-item:nth-child(10) .value { color: #ff6b6b; } /* 干员疲劳 - 红色 */
+.data-item:nth-child(11) .value { color: #7afcff; } /* 无人机 - 青色 */
+.data-item:nth-child(12) .value { color: #b18cff; } /* 训练室 - 紫色 */
 
 /* 游戏战绩颜色 */
-.data-item:nth-child(16) .value { color: #ff9800; } /* 集成战略 - 橙色 */
+.data-item:nth-child(13) .value { color: #ff9800; } /* 集成战略 - 橙色 */
 
 /* ==================== 动画定义 ==================== */
 @keyframes spin {
