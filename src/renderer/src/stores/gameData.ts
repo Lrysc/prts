@@ -149,6 +149,8 @@ interface AssistCharDetail {
   specializeLevel: number;
   moduleText: string;
   skinId: string;
+  subProfessionId: string;
+  profession: string;
   portraitUrl: string;
   avatarUrl: string;
   originalData: any;
@@ -301,6 +303,7 @@ interface PlayerData {
   charInfoMap?: Record<string, {
     name: string;
     profession?: string;
+    subProfessionId?: string;
   }>;
   manufactureFormulaInfoMap?: Record<string, {
     weight?: number;
@@ -1678,11 +1681,18 @@ export const useGameDataStore = defineStore('gameData', () => {
         const potentialText = char.potentialText ? ` ${char.potentialText}` : '';
         const moduleText = char.moduleText ? ` ${char.moduleText}` : '';
 
+        // 获取技能图标URL - 使用GitHub CDN
+        const getSkillIconUrl = (skillId: string): string => {
+          if (!skillId) return ''
+          return `https://raw.githubusercontent.com/yuanyan3060/ArknightsGameResource/main/skill/skill_icon_${skillId}.png`
+        }
+
         return {
           name: char.name,
           level: char.level,
           skill: char.skillId,
           skillNumber: char.skillNumber,
+          skillIconUrl: getSkillIconUrl(char.skillId),
           fullInfo: `${char.name} ${levelText}${potentialText} ${char.skillText}${moduleText}`,
           portraitUrl: char.portraitUrl,
           avatarUrl: char.avatarUrl,

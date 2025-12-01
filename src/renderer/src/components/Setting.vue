@@ -84,7 +84,30 @@
                     <div class="char-level-badge">
                       {{ char.level }}
                     </div>
-                    
+
+                    <!-- 技能图标 - 左下角，展开时显示 -->
+                    <div class="skill-icon-container" v-if="char.skillIconUrl">
+                      <img
+                        :src="char.skillIconUrl"
+                        :alt="char.skillNumber"
+                        class="skill-icon"
+                        @error="(event) => { const target = event.target as HTMLImageElement; console.log('Skill icon load error:', char.skillId, target.src); target.style.display = 'none'; }"
+                        @load="() => console.log('Skill icon loaded:', char.skillId)"
+                      />
+                      <!-- 专精图标 - 三个白点组成三角形 -->
+                      <div class="specialize-dots" v-if="char.specializeLevel > 0">
+                        <div class="dots-background">
+                          <div class="dot dot-top" :class="{ 'dot-active': char.specializeLevel >= 1 }"></div>
+                          <div class="dot dot-bottom-left" :class="{ 'dot-active': char.specializeLevel >= 2 }"></div>
+                          <div class="dot dot-bottom-right" :class="{ 'dot-active': char.specializeLevel >= 3 }"></div>
+                        </div>
+                      </div>
+                      <!-- 普通技能等级标签 -->
+                      <div class="skill-level-badge" v-else>
+                        <span class="skill-level">Lv{{ char.mainSkillLvl }}</span>
+                      </div>
+                    </div>
+
                     <img
                       :src="char.portraitUrl"
                       :alt="char.name"
@@ -105,7 +128,7 @@
                         :src="getProfessionIconUrl(char.profession)"
                         :alt="char.profession"
                         class="char-profession-icon"
-                        @error="(event) => { console.log('Icon load error:', char.profession, event.target.src); event.target.style.display = 'none'; }"
+                        @error="(event) => { const target = event.target as HTMLImageElement; console.log('Icon load error:', char.profession, target.src); target.style.display = 'none'; }"
                         @load="() => console.log('Icon loaded:', char.profession)"
                       />
                       {{ char.name }}
@@ -116,11 +139,7 @@
                       <span class="char-potential">{{ char.potentialRank === 5 ? '满' : char.potentialRank }}潜能</span>
                     </div>
 
-                    <div class="char-skill-line">
-                      <span v-if="char.specializeLevel > 0" class="char-skill">{{ char.skillNumber}}技能</span>
-                      <span v-else class="char-skill">{{ char.mainSkillLvl }}级{{ char.skillNumber}}技能</span>
-                      <span v-if="char.specializeLevel > 0" class="char-skill-level">专{{ char.specializeLevel }}</span>
-                    </div>
+
 
                     <div class="char-module">
                       {{ char.specializeLevel > 0 ? `模组${char.specializeLevel}级` : '未开启模组' }}
@@ -383,12 +402,15 @@
         </div>
       </div>
     </div>
-    <!-- 版本号显示 -->
-    <div class="version-info">
-      Version {{ version }}
-    </div>
-    <div class="version-info">
-      本软件为开源软件，请勿用于商业用途。请遵守协议内容要求，禁止跳脸官方。
+
+    <!-- 版本号显示 - 居中下方 -->
+    <div class="version-container">
+      <div class="version-info">
+        Version {{ version }}
+      </div>
+      <div class="version-info">
+        本软件为开源软件，请勿用于商业用途。请遵守协议内容要求，禁止跳脸官方。
+      </div>
     </div>
   </div>
 </template>
@@ -446,11 +468,11 @@ const lastLogTime = computed(() => {
  */
 const getProfessionIconUrl = (profession: string): string => {
   if (!profession) return ''
-  
+
   // 职业名称映射到文件名
   const professionMap: { [key: string]: string } = {
     'CASTER': 'caster',
-    'MEDIC': 'medic', 
+    'MEDIC': 'medic',
     'PIONEER': 'pioneer',
     'SNIPER': 'sniper',
     'SPECIAL': 'special',
@@ -458,7 +480,7 @@ const getProfessionIconUrl = (profession: string): string => {
     'TANK': 'tank',
     'WARRIOR': 'warrior'
   }
-  
+
   const fileName = professionMap[profession] || profession.toLowerCase()
   return new URL(`../assets/subProfession/${fileName}.svg`, import.meta.url).href
 }
@@ -1363,12 +1385,12 @@ onMounted(() => {
   font-weight: 900;
   font-family: "Microsoft YaHei", "微软雅黑", "SimHei", "黑体", Arial, sans-serif;
   z-index: 10;
-  box-shadow: 
+  box-shadow:
     0 0 20px rgba(255, 255, 255, 0.9),
     0 0 12px rgba(255, 200, 100, 0.6),
     0 3px 8px rgba(0, 0, 0, 0.6),
     inset 0 0 6px rgba(255, 255, 255, 0.4);
-  text-shadow: 
+  text-shadow:
     0 0 8px rgba(255, 255, 255, 1),
     0 0 4px rgba(255, 200, 100, 0.8),
     0 2px 3px rgba(0, 0, 0, 1);
@@ -1379,14 +1401,14 @@ onMounted(() => {
 /* 等级标签呼吸动画 */
 @keyframes levelGlow {
   0% {
-    box-shadow: 
+    box-shadow:
       0 0 20px rgba(255, 255, 255, 0.9),
       0 0 12px rgba(255, 200, 100, 0.6),
       0 3px 8px rgba(0, 0, 0, 0.6),
       inset 0 0 6px rgba(255, 255, 255, 0.4);
   }
   100% {
-    box-shadow: 
+    box-shadow:
       0 0 25px rgba(255, 255, 255, 1),
       0 0 18px rgba(255, 200, 100, 0.8),
       0 3px 8px rgba(0, 0, 0, 0.6),
@@ -1507,23 +1529,106 @@ onMounted(() => {
   font-weight: 500;
 }
 
-/* 技能信息行 */
-.char-skill-line {
-  display: flex;
-  justify-content: center;
-  gap: 4px;
-  font-size: 16px;
-  line-height: 1.2;
-  flex-wrap: wrap;
+/* 技能图标容器 - 定位在半身像下方居中位置，默认隐藏 */
+.char-portrait-container .skill-icon-container {
+  position: absolute;
+  bottom: -5px;
+  left: 50%;
+  transform: translateX(-50%) scale(0.8);
+  z-index: 5;
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* 展开时显示技能图标 */
+.assist-char-item:hover .char-portrait-container .skill-icon-container {
+  opacity: 1;
+  transform: translateX(-50%) scale(1);
+  pointer-events: auto;
+}
+
+.char-portrait-container .skill-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  transition: all 0.3s ease;
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.5);
+}
+
+.char-portrait-container .skill-icon:hover {
+  transform: scale(1.1);
+  border-color: rgba(255, 255, 255, 0.6);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.7);
+}
+
+/* 普通技能等级标签 */
+.char-portrait-container .skill-level-badge {
+  position: absolute;
+  top: 0px;
+  left: 0px;
+  background: linear-gradient(135deg, #2196f3, #42a5f5);
+  color: white;
+  border-radius: 8px;
+  padding: 2px 4px;
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1;
+  min-width: 18px;
+  text-align: center;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+/* 专精三个白点图标 */
+.char-portrait-container .specialize-dots {
+  position: absolute;
+  top: 0px;
+  left: 0px;
+  width: 20px;
+  height: 20px;
+  z-index: 11;
+}
+
+.dots-background {
+  width: 100%;
+  height: 100%;
+  background-color: #808080;
+  border-radius: 4px;
+  position: relative;
+}
+
+.char-portrait-container .dot {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: #666;
   transition: all 0.3s ease;
 }
 
-.char-skill {
-  color: #6cc24a;
+/* 等边三角形布局 */
+.dot-top {
+  top: 4px;
+  left: 50%;
+  transform: translateX(-50%);
 }
 
-.char-skill-level {
-  color: #ffa726;
+.dot-bottom-left {
+  top: 10px;
+  left: 4px;
+}
+
+.dot-bottom-right {
+  top: 10px;
+  right: 4px;
+}
+
+.char-portrait-container .dot-active {
+  background-color: white;
+  box-shadow: 0 0 4px rgba(255, 255, 255, 0.8);
 }
 
 /* 模组信息 */
@@ -2713,6 +2818,16 @@ onMounted(() => {
   font-size: 14px;
 }
 
+/* 版本号容器样式 */
+.version-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  margin-top: 30px;
+  padding: 0 20px;
+}
+
 /* 版本号样式 - 统一容器样式 */
 .version-info {
   background: #2d2d2d;
@@ -2721,8 +2836,9 @@ onMounted(() => {
   color: #999;
   font-size: 12px;
   text-align: center;
-  margin-top: 20px;
   padding: 15px 20px;
+  max-width: 600px;
+  width: 100%;
 }
 
 /* 响应式设计 */
