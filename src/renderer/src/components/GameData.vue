@@ -50,22 +50,36 @@
         <h3 class="section-title">--- 实时数据 ---</h3>
         <ul class="data-grid">
           <li class="data-item">
-            <div class="ap-container">
-              <div class="ap-left-section">
+            <div class="ap-ring-container">
+              <svg class="ap-ring-svg" viewBox="0 0 180 180">
+                <!-- 背景圆环 -->
+                <circle cx="90" cy="90" r="80" fill="none" stroke="#333" stroke-width="8"/>
+                <!-- 进度圆环 -->
+                <circle 
+                  cx="90" cy="90" r="80" 
+                  fill="none" 
+                  :stroke="gameDataStore.getActualApInfo?.remainSecs > 0 ? '#888' : '#4a90e2'" 
+                  stroke-width="8" 
+                  :stroke-dasharray="circumference" 
+                  :stroke-dashoffset="apProgress" 
+                  stroke-linecap="round" 
+                  transform="rotate(-90 90 90)" 
+                  class="ap-progress-circle"
+                />
+              </svg>
+              <div class="ap-info">
                 <span class="label">理智</span>
+                <div class="ap-value">
+                  <span class="current-ap">{{ gameDataStore.getActualApInfo?.current || '--' }}</span>
+                  <span class="ap-separator">/</span>
+                  <span class="max-ap">{{ gameDataStore.getActualApInfo?.max || '--' }}</span>
+                </div>
                 <div class="ap-recovery-info">
                   <span class="sub-value" v-if="gameDataStore.getActualApInfo?.remainSecs > 0">
                     {{ gameDataStore.formatRecoveryTime(gameDataStore.getActualApInfo?.recoverTime) }} 回满
                   </span>
                   <span class="sub-value" v-else-if="gameDataStore.getActualApInfo">已回满</span>
                 </div>
-              </div>
-              <div class="ap-value-container">
-                <span class="ap-value">
-              <span class="current-ap">{{ gameDataStore.getActualApInfo?.current || '--' }}</span>
-              <span class="ap-separator">/</span>
-              <span class="max-ap">{{ gameDataStore.getActualApInfo?.max || '--' }}</span>
-            </span>
               </div>
             </div>
           </li>
@@ -112,30 +126,40 @@
       <div class="section-card" v-if="authStore.isLogin">
         <h3 class="section-title">--- 基建数据 ---</h3>
         <ul class="data-grid">
-          <li class="data-item">
-            <span class="label">贸易站订单</span>
-            <span class="value">{{ gameDataStore.getTradingOrderCount || '--' }}</span>
+          <li class="data-item production-item">
+            <div class="production-container">
+              <div class="production-left">
+                <span class="production-label">贸易站</span>
+                <span class="production-value">{{ gameDataStore.getTradingOrderCount || '--' }}</span>
+              </div>
+              <div class="production-divider"></div>
+              <div class="production-right">
+                <span class="production-label">制造站</span>
+                <span class="production-value">{{ gameDataStore.getManufactureStatus || '--' }}</span>
+              </div>
+            </div>
           </li>
-          <li class="data-item">
-            <span class="label">制造站</span>
-            <span class="value">{{ gameDataStore.getManufactureStatus || '--' }}</span>
-          </li>
-          <li class="data-item">
-            <span class="label">宿舍休息</span>
-            <span class="value">{{ gameDataStore.getDormRestCount || '--' }} 人</span>
+          <li class="data-item dorm-tired-item">
+            <div class="dorm-tired-container">
+              <div class="dorm-tired-left">
+                <span class="dorm-tired-label">宿舍休息</span>
+                <span class="dorm-tired-value">{{ gameDataStore.getDormRestCount || '--' }} 人</span>
+              </div>
+              <div class="dorm-tired-divider"></div>
+              <div class="dorm-tired-right">
+                <span class="dorm-tired-label">干员疲劳</span>
+                <span class="dorm-tired-value">{{ gameDataStore.getTiredCharsCount || '0' }} 人</span>
+              </div>
+            </div>
           </li>
           <li class="data-item">
             <span class="label">会客室线索</span>
-            <span class="value">{{ gameDataStore.getClueCount || '--' }}</span>
+            <span class="value clue-value">{{ gameDataStore.getClueCount || '--' }}</span>
             <span class="sub-value" v-if="gameDataStore.getClueCount && gameDataStore.getClueCount.startsWith('7/')">（已满）</span>
           </li>
           <li class="data-item">
-            <span class="label">干员疲劳</span>
-            <span class="value">{{ gameDataStore.getTiredCharsCount || '0' }} 人</span>
-          </li>
-          <li class="data-item">
             <span class="label">无人机</span>
-            <span class="value">{{ gameDataStore.getLaborCount?.count || '--' }}</span>
+            <span class="value drone-value">{{ gameDataStore.getLaborCount?.count || '--' }}</span>
             <span class="sub-value" v-if="gameDataStore.getLaborCount?.remainSecs > 0">
               {{ gameDataStore.getLaborCount?.recovery || '--' }} 回满
             </span>
@@ -201,7 +225,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, watch, inject } from 'vue';
+import { ref, onMounted, watch, inject, computed } from 'vue';
 import { useAuthStore } from '@stores/auth';
 import { useGameDataStore } from '@stores/gameData';
 import { AuthAPI } from '@services/api';
@@ -447,6 +471,23 @@ watch(() => currentActiveComponent?.value, (newComponent, oldComponent) => {
   }
 });
 
+// ==================== 计算属性 ====================
+/**
+ * 圆环周长
+ */
+const circumference = ref(2 * Math.PI * 80);
+
+/**
+ * 理智进度计算
+ * 根据当前理智和最大理智计算圆环进度
+ */
+const apProgress = computed(() => {
+  const current = gameDataStore.getActualApInfo?.current || 0;
+  const max = gameDataStore.getActualApInfo?.max || 1;
+  const progress = (current / max) * circumference.value;
+  return circumference.value - progress;
+});
+
 // ==================== 暴露方法给模板 ====================
 /**
  * 暴露手动刷新方法，供模板中使用（如果需要）
@@ -621,8 +662,8 @@ defineExpose({
 }
 
 .data-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  display: flex;
+  flex-wrap: wrap;
   gap: 12px;
   list-style: none;
   margin: 0;
@@ -637,6 +678,16 @@ defineExpose({
   border-radius: 6px;
   transition: all 0.3s ease;
   border: 1px solid #404040;
+  flex: 1 1 calc(50% - 6px);
+  min-width: 200px;
+}
+
+/* 理智容器特殊样式 - 占用更多空间 */
+.data-item:first-child {
+  flex: 1 1 calc(100% - 6px);
+  min-width: 180px;
+  max-width: 200px;
+  margin: 0 auto;
 }
 
 .data-item:hover {
@@ -652,66 +703,72 @@ defineExpose({
   font-weight: 500;
 }
 
-/* 理智标题加大 */
-.ap-container .label {
-  font-size: 16px;
-  font-weight: 600;
-}
-
 .value {
   font-size: 16px;
   color: #ccc;
   font-weight: 600;
 }
 
-/* 理智特殊样式 */
-.ap-container {
+/* 理智圆环样式 */
+.ap-ring-container {
+  position: relative;
+  width: 180px;
+  height: 180px;
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  justify-content: center;
+  margin: 0 auto;
+}
+
+.ap-ring-svg {
   width: 100%;
+  height: 100%;
+  position: absolute;
+  top: 0;
+  left: 0;
 }
 
-.ap-left-section {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 8px;
+.ap-progress-circle {
+  transition: stroke-dashoffset 0.3s ease;
 }
 
-.ap-value-container {
+.ap-info {
+  position: relative;
+  z-index: 1;
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
+  align-items: center;
+  gap: 4px;
 }
 
 .ap-value {
   display: flex;
   align-items: center;
   gap: 2px;
+  font-size: 22px;
+  font-weight: 700;
+  color: #fff;
 }
 
 .current-ap {
-  font-size: 40px;
-  font-weight: 700;
+  font-size: 26px;
   color: #9feaf9;
 }
 
 .ap-separator {
-  font-size: 32px;
   color: #999;
-  margin: 0 2px;
+  margin: 0 1px;
 }
 
 .max-ap {
-  font-size: 28px;
-  color: #9feaf9;
-  opacity: 0.8;
+  font-size: 20px;
+  color: #ccc;
 }
 
 .ap-recovery-info {
-  display: flex;
-  justify-content: flex-start;
+  font-size: 11px;
+  color: #666;
+  text-align: center;
 }
 
 /* 任务容器样式 */
@@ -928,6 +985,108 @@ defineExpose({
   margin-top: 2px;
 }
 
+/* 生产容器样式 */
+.production-item {
+  min-height: 60px;
+  padding: 8px;
+}
+
+.production-container {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  height: 100%;
+}
+
+.production-left,
+.production-right {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+}
+
+.production-divider {
+  width: 1px;
+  height: 40px;
+  background: #444;
+  margin: 0 12px;
+}
+
+.production-label {
+  font-size: 12px;
+  color: #999;
+  font-weight: 500;
+}
+
+.production-value {
+  font-size: 14px;
+  color: #4682b4;
+  font-weight: 600;
+}
+
+.production-right .production-value {
+  color: #ffd700;
+}
+
+/* 宿舍疲劳容器样式 */
+.dorm-tired-item {
+  min-height: 60px;
+  padding: 8px;
+}
+
+.dorm-tired-container {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  height: 100%;
+}
+
+.dorm-tired-left,
+.dorm-tired-right {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+}
+
+.dorm-tired-divider {
+  width: 1px;
+  height: 40px;
+  background: #444;
+  margin: 0 12px;
+}
+
+.dorm-tired-label {
+  font-size: 12px;
+  color: #999;
+  font-weight: 500;
+}
+
+.dorm-tired-value {
+  font-size: 14px;
+  color: #6cc24a;
+  font-weight: 600;
+}
+
+.dorm-tired-right .dorm-tired-value {
+  color: #ff6b6b;
+}
+
+/* 线索交流颜色 */
+.clue-value {
+  color: #ffb366 !important;
+}
+
+/* 无人机颜色 */
+.drone-value {
+  color: #b19cd9 !important;
+}
+
 /* 数据项颜色区分 - 为不同类型数据提供视觉区分 */
 .data-item:nth-child(1) .value { color: #9feaf9; } /* 理智 - 蓝色 */
 .data-item:nth-child(2) .value { color: #fad000; } /* 剿灭 - 黄色 */
@@ -969,7 +1128,6 @@ defineExpose({
   }
 
   .data-grid {
-    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
     gap: 8px;
   }
 
@@ -989,8 +1147,8 @@ defineExpose({
 }
 
 @media (max-width: 480px) {
-  .data-grid {
-    grid-template-columns: 1fr;
+  .data-item {
+    flex: 1 1 100%;
   }
 }
 </style>
